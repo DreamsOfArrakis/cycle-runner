@@ -12,9 +12,6 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Cycle Runner",
   description: "A QA Service on Request - Unlimited tests, fast delivery, fixed monthly rate",
-  icons: {
-    icon: '/favicon.png',
-  },
 };
 
 export default function RootLayout({
