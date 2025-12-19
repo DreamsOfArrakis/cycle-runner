@@ -1,0 +1,15 @@
+{
+  "name": "cycle-runner",
+  "version": "1.0.0",
+  "description": "Playwright test runner for Cycle Runner",
+  "main": "run-tests.js",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.40.0",
+    "@supabase/supabase-js": "^2.39.3",
+    "dotenv": "^16.3.1"
+  }
+}
+

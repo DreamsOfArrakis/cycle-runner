@@ -1,0 +1,33 @@
+# Fly.io configuration for Cycle Runner test runner
+
+app = "cycle-runner"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+[compute]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 1024
+
+# Scale to zero when not in use
+[auto_scaling]
+  min_machines_running = 0
+  max_machines_running = 10
+
