@@ -187,19 +187,17 @@ export default function TestSelector({ suiteId, onRunTests, isRunning }: TestSel
               <div className="flex items-center p-3 bg-gray-50 hover:bg-gray-100 transition">
                 <button
                   onClick={() => toggleCategory(category.name)}
-                  className="flex items-center space-x-2 flex-1 text-left"
+                  className="flex items-center"
                 >
                   {isExpanded ? (
                     <ChevronDown className="w-5 h-5 text-gray-600" />
                   ) : (
                     <ChevronRight className="w-5 h-5 text-gray-600" />
                   )}
-                  <span className="font-medium" style={{ color: '#0e545e' }}>{category.displayName}</span>
-                  <span className="text-sm text-gray-500">({category.tests.length} tests)</span>
                 </button>
                 <button
                   onClick={() => toggleCategorySelection(category)}
-                  className="p-1 hover:bg-gray-200 rounded"
+                  className="p-1 hover:bg-gray-200 rounded ml-2"
                 >
                   {isSelected ? (
                     <CheckSquare className="w-5 h-5" style={{ color: '#FD5D1C' }} />
@@ -208,6 +206,13 @@ export default function TestSelector({ suiteId, onRunTests, isRunning }: TestSel
                   ) : (
                     <Square className="w-5 h-5 text-gray-400" />
                   )}
+                </button>
+                <button
+                  onClick={() => toggleCategory(category.name)}
+                  className="flex items-center space-x-2 flex-1 text-left ml-2"
+                >
+                  <span className="font-medium" style={{ color: '#0e545e' }}>{category.displayName}</span>
+                  <span className="text-sm text-gray-500">({category.tests.length} tests)</span>
                 </button>
               </div>
 
