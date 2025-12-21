@@ -21,10 +21,16 @@ export default function Home() {
           `
         }}
       >
-        <div className="container mx-auto px-4 py-16">
+        <div className="container mx-auto px-4 py-16 md:pt-36 md:pb-16">
           <div className="text-center mb-16">
-            <h1 className="text-5xl font-bold mb-4 text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-              Cycle Runner
+            <h1 
+              className="text-5xl font-bold tracking-tight mb-4 shimmer-text"
+              style={{
+                fontFamily: 'var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+                letterSpacing: '-0.02em'
+              }}
+            >
+              CYCLE-RUNNER
             </h1>
             <p className="text-xl mb-8 text-white" style={{ opacity: 0.95, maxWidth: '600px', margin: '0 auto 2rem' }}>
               Automated testing platform for modern teams
