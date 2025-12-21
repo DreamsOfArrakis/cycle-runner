@@ -14,6 +14,7 @@ interface TestResult {
   video_url: string | null;
   started_at: string | null;
   completed_at: string | null;
+  created_at?: string;
 }
 
 interface IndividualTestResultsProps {
@@ -33,8 +34,7 @@ export default function IndividualTestResults({ runId, runStatus }: IndividualTe
         .from('test_results')
         .select('*')
         .eq('test_run_id', runId)
-        .order('test_file', { ascending: true })
-        .order('test_name', { ascending: true });
+        .order('test_file', { ascending: true });
 
       if (error) {
         console.error('Error fetching test results:', error);
@@ -101,7 +101,7 @@ export default function IndividualTestResults({ runId, runStatus }: IndividualTe
     );
   };
 
-  // Group tests by file
+  // Group tests by file and sort within each file by execution order
   const testsByFile = tests.reduce((acc, test) => {
     if (!acc[test.test_file]) {
       acc[test.test_file] = [];
@@ -109,6 +109,29 @@ export default function IndividualTestResults({ runId, runStatus }: IndividualTe
     acc[test.test_file].push(test);
     return acc;
   }, {} as Record<string, TestResult[]>);
+
+  // Sort tests within each file by creation/execution order to maintain consistent position
+  // This ensures tests stay in the same order they were created/run, regardless of pass/fail status
+  Object.keys(testsByFile).forEach(fileName => {
+    testsByFile[fileName].sort((a, b) => {
+      // First, try to sort by started_at (execution order) if both have it
+      if (a.started_at && b.started_at) {
+        return new Date(a.started_at).getTime() - new Date(b.started_at).getTime();
+      }
+      // If one has started_at and the other doesn't, prioritize the one with started_at
+      if (a.started_at && !b.started_at) return -1;
+      if (!a.started_at && b.started_at) return 1;
+      // Fallback to created_at (insertion order) if available
+      if (a.created_at && b.created_at) {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      }
+      // If one has created_at and the other doesn't, prioritize the one with created_at
+      if (a.created_at && !b.created_at) return -1;
+      if (!a.created_at && b.created_at) return 1;
+      // Final fallback: use ID for consistent ordering (maintains insertion order)
+      return a.id.localeCompare(b.id);
+    });
+  });
 
   if (loading) {
     return (
