@@ -39,11 +39,8 @@ export default function TestSelector({ suiteId, onRunTests, isRunning }: TestSel
         setCategories(data.categories);
         // Expand all categories by default
         setExpandedCategories(new Set(data.categories.map((c: Category) => c.name)));
-        // Select all tests by default
-        const allTestIds = data.categories.flatMap((cat: Category) =>
-          cat.tests.map((test: Test) => `${cat.name}:${test.name}`)
-        );
-        setSelectedTests(new Set(allTestIds));
+        // Start with all tests unchecked - user can select what they want
+        setSelectedTests(new Set());
       }
     } catch (error) {
       console.error('Error fetching tests:', error);
