@@ -133,6 +133,19 @@ export default function TestSelector({ suiteId, onRunTests, isRunning }: TestSel
     );
   }
 
+  if (categories.length === 0) {
+    return (
+      <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="text-center py-12">
+          <p className="text-gray-500 mb-2 text-lg">No tests available</p>
+          <p className="text-sm text-gray-400">
+            No tests have been discovered for this test suite. Tests are discovered from the configured test files.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">
       <div className="flex items-center justify-between mb-4">

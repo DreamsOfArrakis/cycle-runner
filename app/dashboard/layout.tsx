@@ -16,6 +16,7 @@ export default function DashboardLayout({
   const router = useRouter();
   const supabase = createClient();
   const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,6 +27,17 @@ export default function DashboardLayout({
         router.push("/login");
       } else {
         setUser(user);
+        
+        // Fetch profile to get company name
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("company_name")
+          .eq("id", user.id)
+          .single();
+        
+        if (profileData) {
+          setProfile(profileData);
+        }
       }
       setLoading(false);
     };
@@ -83,7 +95,7 @@ export default function DashboardLayout({
                     </Link>
 
                     <div className="text-white font-medium">
-                      E-commerce Company
+                      {profile?.company_name || "Your Company"}
                     </div>
                   </div>
                 </div>

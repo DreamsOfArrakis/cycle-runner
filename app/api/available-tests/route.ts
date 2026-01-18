@@ -16,10 +16,22 @@ export async function GET(request: NextRequest) {
     // Extract just the JSON part (after "Discovered tests:")
     const jsonMatch = stdout.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
-      throw new Error("Could not find JSON in output");
+      // If no JSON found, assume no tests available (empty array)
+      return NextResponse.json({
+        success: true,
+        categories: [],
+      });
     }
     
     const tests = JSON.parse(jsonMatch[0]);
+
+    // If no tests found, return empty array
+    if (!Array.isArray(tests) || tests.length === 0) {
+      return NextResponse.json({
+        success: true,
+        categories: [],
+      });
+    }
 
     // Group tests by category (file)
     const categories = tests.reduce((acc: any, test: any) => {

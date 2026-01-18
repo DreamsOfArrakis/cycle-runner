@@ -6,31 +6,42 @@ import { createClient } from "@/lib/supabase/client";
 import Footer from "@/components/Footer";
 import Link from "next/link";
 
-export default function LoginPage() {
+export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const response = await fetch("/api/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          password,
+          companyName,
+        }),
       });
 
-      if (error) throw error;
+      const data = await response.json();
 
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to create account");
+      }
+
+      // Redirect to dashboard
       router.push("/dashboard");
       router.refresh();
     } catch (err: any) {
-      setError(err.message || "Failed to login");
+      setError(err.message || "Failed to create account");
     } finally {
       setLoading(false);
     }
@@ -70,10 +81,10 @@ export default function LoginPage() {
                 CYCLE-RUNNER
               </span>
             </div>
-            <p className="text-white text-lg" style={{ opacity: 0.95 }}>Sign in to your account</p>
+            <p className="text-white text-lg" style={{ opacity: 0.95 }}>Create your account</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-6">
+          <form onSubmit={handleSignup} className="space-y-6">
             <div 
               className="backdrop-blur-md rounded-lg shadow-lg p-6 space-y-4"
               style={{ 
@@ -89,11 +100,31 @@ export default function LoginPage() {
 
               <div>
                 <label
+                  htmlFor="companyName"
+                  className="block text-sm font-medium mb-1"
+                  style={{ color: '#0e545e' }}
+                >
+                  Company Name *
+                </label>
+                <input
+                  id="companyName"
+                  type="text"
+                  required
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  placeholder="The Furniture Store"
+                  style={{ borderColor: '#0e545e33' }}
+                />
+              </div>
+
+              <div>
+                <label
                   htmlFor="email"
                   className="block text-sm font-medium mb-1"
                   style={{ color: '#0e545e' }}
                 >
-                  Email
+                  Email *
                 </label>
                 <input
                   id="email"
@@ -102,7 +133,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  placeholder="you@example.com"
+                  placeholder="thefurniturestore@example.com"
                   style={{ borderColor: '#0e545e33' }}
                 />
               </div>
@@ -113,7 +144,7 @@ export default function LoginPage() {
                   className="block text-sm font-medium mb-1"
                   style={{ color: '#0e545e' }}
                 >
-                  Password
+                  Password *
                 </label>
                 <input
                   id="password"
@@ -146,18 +177,18 @@ export default function LoginPage() {
                   e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
                 }}
               >
-                {loading ? "Signing in..." : "Sign In"}
+                {loading ? "Creating account..." : "Create Account"}
               </button>
 
               <div className="text-center pt-2">
                 <p className="text-sm text-gray-600">
-                  Don't have an account?{" "}
+                  Already have an account?{" "}
                   <Link
-                    href="/signup"
+                    href="/login"
                     className="font-medium transition hover:opacity-80"
                     style={{ color: '#FD5D1C' }}
                   >
-                    Sign up
+                    Sign in
                   </Link>
                 </p>
               </div>
