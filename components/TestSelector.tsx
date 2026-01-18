@@ -25,14 +25,49 @@ export default function TestSelector({ suiteId, onRunTests, isRunning }: TestSel
   const [loading, setLoading] = useState(true);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [selectedTests, setSelectedTests] = useState<Set<string>>(new Set());
+  const [selectedCompany, setSelectedCompany] = useState<string>("");
+
+  useEffect(() => {
+    // Get initial company from localStorage
+    const company = localStorage.getItem("selectedCompany") || "";
+    setSelectedCompany(company);
+    
+    // Listen for storage changes (when dropdown changes company)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "selectedCompany") {
+        setSelectedCompany(e.newValue || "");
+      }
+    };
+    
+    // Listen for custom event (triggered by company dropdown)
+    const handleCompanyChange = () => {
+      const company = localStorage.getItem("selectedCompany") || "";
+      setSelectedCompany(company);
+    };
+    
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("companyChanged", handleCompanyChange);
+    
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("companyChanged", handleCompanyChange);
+    };
+  }, []);
 
   useEffect(() => {
     fetchTests();
-  }, []);
+  }, [selectedCompany]); // Re-fetch when company changes
 
   const fetchTests = async () => {
+    setLoading(true);
     try {
-      const response = await fetch('/api/available-tests');
+      // Get selected company from localStorage (set by dropdown)
+      const company = selectedCompany || localStorage.getItem("selectedCompany") || "";
+      const url = company 
+        ? `/api/available-tests?company=${encodeURIComponent(company)}`
+        : '/api/available-tests';
+      
+      const response = await fetch(url);
       const data = await response.json();
       
       if (data.success) {
