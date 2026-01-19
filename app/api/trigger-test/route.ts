@@ -108,7 +108,10 @@ export async function POST(request: NextRequest) {
 
     // Trigger Fly.io machine (simplified for Phase 1)
     // In production, this would call Fly.io API
-    triggerFlyioRunner(testRun.id, suite, selectedTests);
+    // Use the request URL to determine the correct API URL (handles different ports)
+    const requestUrl = new URL(request.url);
+    const apiUrl = process.env.NEXT_PUBLIC_APP_URL || `${requestUrl.protocol}//${requestUrl.host}`;
+    triggerFlyioRunner(testRun.id, suite, selectedTests, apiUrl);
 
     return NextResponse.json({
       success: true,
@@ -125,7 +128,7 @@ export async function POST(request: NextRequest) {
 }
 
 // Function to trigger test runner
-async function triggerFlyioRunner(runId: string, suite: any, selectedTests?: { testName: string; testFile: string }[]) {
+async function triggerFlyioRunner(runId: string, suite: any, selectedTests?: { testName: string; testFile: string }[], apiUrl?: string) {
   console.log(`Triggering test runner for run ${runId}, suite: ${suite.name}`);
   if (selectedTests && selectedTests.length > 0) {
     console.log(`Running ${selectedTests.length} selected tests`);
@@ -140,15 +143,14 @@ async function triggerFlyioRunner(runId: string, suite: any, selectedTests?: { t
     const fs = await import("fs");
     
     const runnerPath = path.join(process.cwd(), "playwright-runner", "run-local-individual.js");
-    // Use the request URL to determine the correct API URL (handles different ports)
-    const requestUrl = new URL(request.url);
-    const apiUrl = process.env.NEXT_PUBLIC_APP_URL || `${requestUrl.protocol}//${requestUrl.host}`;
+    // Use provided API URL or fallback to default
+    const finalApiUrl = apiUrl || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     
     console.log(`Spawning local test runner: ${runnerPath}`);
-    console.log(`Using API URL: ${apiUrl}`);
+    console.log(`Using API URL: ${finalApiUrl}`);
     
     // Pass selected tests and github_repo as JSON argument
-    const args = [runnerPath, runId, apiUrl];
+    const args = [runnerPath, runId, finalApiUrl];
     const runnerConfig = {
       selectedTests: selectedTests || [],
       githubRepo: suite.github_repo || null,
