@@ -7,7 +7,11 @@ module.exports = defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: 'json',
+  reporter: [
+    ['list'], // Human-readable console output
+    ['html'], // HTML report for detailed view
+    ['json', { outputFile: 'test-results/results.json' }] // Keep JSON for programmatic access
+  ],
   
   use: {
     trace: 'on-first-retry',
