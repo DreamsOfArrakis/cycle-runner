@@ -104,7 +104,15 @@ const RUN_ID = process.argv[2];
 const API_URL = process.argv[3] || 'http://localhost:3000';
 const CONFIG_JSON = process.argv[4]; // JSON config with selectedTests and githubRepo
 
+console.log(`[run-local-individual] 🔍 DEBUG: Starting test runner`);
+console.log(`[run-local-individual] 🔍 DEBUG: RUN_ID: ${RUN_ID}`);
+console.log(`[run-local-individual] 🔍 DEBUG: API_URL: ${API_URL}`);
+console.log(`[run-local-individual] 🔍 DEBUG: CONFIG_JSON: ${CONFIG_JSON ? 'provided' : 'not provided'}`);
+console.log(`[run-local-individual] 🔍 DEBUG: Current directory: ${process.cwd()}`);
+console.log(`[run-local-individual] 🔍 DEBUG: __dirname: ${__dirname}`);
+
 if (!RUN_ID) {
+  console.error('[run-local-individual] ❌ ERROR: RUN_ID is required');
   console.error('Usage: node run-local-individual.js <RUN_ID> [API_URL] [CONFIG_JSON]');
   process.exit(1);
 }
@@ -116,14 +124,23 @@ let externalTestPath = null;
 
 // Initialize async - we'll handle this in runAllTests
 async function initializeConfig() {
+  console.log(`[run-local-individual] 🔍 DEBUG: Initializing config...`);
   if (CONFIG_JSON) {
     try {
+      console.log(`[run-local-individual] 🔍 DEBUG: Parsing config JSON...`);
       const config = JSON.parse(CONFIG_JSON);
       selectedTestsFilter = config.selectedTests || null;
       githubRepo = config.githubRepo || null;
       
+      console.log(`[run-local-individual] 🔍 DEBUG: Config parsed successfully`);
+      console.log(`[run-local-individual] 🔍 DEBUG: githubRepo: ${githubRepo || 'none'}`);
+      console.log(`[run-local-individual] 🔍 DEBUG: selectedTestsFilter: ${selectedTestsFilter ? `${selectedTestsFilter.length} tests` : 'none (running all)'}`);
+      
       if (selectedTestsFilter && selectedTestsFilter.length > 0) {
         console.log(`📋 Running ${selectedTestsFilter.length} selected tests`);
+        selectedTestsFilter.forEach((test, idx) => {
+          console.log(`[run-local-individual] 🔍 DEBUG:   Selected test ${idx + 1}: ${test.testName} (${test.testFile})`);
+        });
       }
       
       // If github_repo is configured, clone it
@@ -133,11 +150,17 @@ async function initializeConfig() {
         const clonedRepoPath = await cloneOrGetRepo(githubRepo);
         externalTestPath = await findTestDirectory(clonedRepoPath);
         console.log(`✅ Using tests from: ${externalTestPath}`);
+      } else {
+        console.log(`[run-local-individual] 🔍 DEBUG: No github_repo configured, using local tests`);
+        console.log(`[run-local-individual] 🔍 DEBUG: Local tests directory: ${path.join(__dirname, 'tests')}`);
       }
     } catch (err) {
-      console.error('❌ Failed to parse config JSON:', err.message);
+      console.error('[run-local-individual] ❌ ERROR: Failed to parse config JSON:', err.message);
+      console.error('[run-local-individual] 🔍 DEBUG: Config JSON was:', CONFIG_JSON);
       process.exit(1);
     }
+  } else {
+    console.log(`[run-local-individual] 🔍 DEBUG: No config JSON provided, using defaults`);
   }
 }
 
@@ -160,6 +183,8 @@ async function updateTestStatus(testName, updates) {
 
 async function runIndividualTest(testFile, testName) {
   console.log(`\n🧪 Running: ${testName} (${testFile})`);
+  console.log(`[run-local-individual] 🔍 DEBUG: Test file: ${testFile}`);
+  console.log(`[run-local-individual] 🔍 DEBUG: Test name: ${testName}`);
   
   // Update status to running
   await updateTestStatus(testName, { status: 'running' });
@@ -178,8 +203,16 @@ async function runIndividualTest(testFile, testName) {
       ? path.join(externalTestPath, testFile.replace(/^.*\//, '')) // Just filename if external
       : testFile;
     
+    console.log(`[run-local-individual] 🔍 DEBUG: Test working directory: ${testCwd}`);
+    console.log(`[run-local-individual] 🔍 DEBUG: Test file path: ${testFilePath}`);
+    console.log(`[run-local-individual] 🔍 DEBUG: Escaped test name: ${escapedTestName}`);
+    
+    const command = `npx playwright test "${testFilePath}" --grep "${escapedTestName}" --reporter=json`;
+    console.log(`[run-local-individual] 🔍 DEBUG: Executing command: ${command}`);
+    console.log(`[run-local-individual] 🔍 DEBUG: Command working directory: ${testCwd}`);
+    
     const { stdout, stderr } = await execAsync(
-      `npx playwright test "${testFilePath}" --grep "${escapedTestName}" --reporter=json`,
+      command,
       {
         cwd: testCwd,
         env: {
@@ -188,6 +221,12 @@ async function runIndividualTest(testFile, testName) {
         },
       }
     );
+    
+    console.log(`[run-local-individual] 🔍 DEBUG: Command executed successfully`);
+    console.log(`[run-local-individual] 🔍 DEBUG: stdout length: ${stdout.length}`);
+    if (stderr) {
+      console.log(`[run-local-individual] 🔍 DEBUG: stderr: ${stderr.substring(0, 500)}`);
+    }
     
     const duration = Date.now() - startTime;
     
@@ -271,6 +310,16 @@ async function runIndividualTest(testFile, testName) {
     
   } catch (error) {
     const duration = Date.now() - startTime;
+    
+    console.error(`[run-local-individual] ❌ ERROR: Test execution failed`);
+    console.error(`[run-local-individual] 🔍 DEBUG: Error message: ${error.message}`);
+    console.error(`[run-local-individual] 🔍 DEBUG: Error code: ${error.code || 'none'}`);
+    if (error.stdout) {
+      console.error(`[run-local-individual] 🔍 DEBUG: Error stdout: ${error.stdout.substring(0, 1000)}`);
+    }
+    if (error.stderr) {
+      console.error(`[run-local-individual] 🔍 DEBUG: Error stderr: ${error.stderr.substring(0, 1000)}`);
+    }
     
     // Try to parse error output to get actual test failure details
     let errorMessage = humanizeError(error.message || 'Test execution failed');
@@ -360,8 +409,19 @@ async function runAllTests() {
     
     // Step 1: Discover all tests (from external repo if configured, otherwise local)
     console.log('📋 Discovering tests...');
-    let tests = await discoverTests(null, externalTestPath);
-    console.log(`   Found ${tests.length} total tests\n`);
+    console.log(`[run-local-individual] 🔍 DEBUG: Test discovery path: ${externalTestPath || path.join(__dirname, 'tests')}`);
+    let tests = await discoverTests(null, externalTestPath, true); // Enable verbose logging
+    console.log(`   Found ${tests.length} total tests`);
+    if (tests.length > 0) {
+      console.log(`[run-local-individual] 🔍 DEBUG: Discovered tests:`);
+      tests.forEach((test, idx) => {
+        console.log(`[run-local-individual] 🔍 DEBUG:   ${idx + 1}. ${test.testName} (${test.testFile})`);
+      });
+    } else {
+      console.log(`[run-local-individual] ⚠️  WARNING: No tests discovered!`);
+      console.log(`[run-local-individual] 🔍 DEBUG: Checked path: ${externalTestPath || path.join(__dirname, 'tests')}`);
+    }
+    console.log('');
     
     // Filter tests if selectedTestsFilter is provided
     if (selectedTestsFilter && selectedTestsFilter.length > 0) {
@@ -381,6 +441,8 @@ async function runAllTests() {
     
     // Step 2: Create test_results records
     console.log('💾 Creating test result records...');
+    console.log(`[run-local-individual] 🔍 DEBUG: POSTing to ${API_URL}/api/test-results`);
+    console.log(`[run-local-individual] 🔍 DEBUG: Payload: ${JSON.stringify({ testRunId: RUN_ID, testsCount: tests.length }, null, 2)}`);
     const createResponse = await fetch(`${API_URL}/api/test-results`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -390,9 +452,16 @@ async function runAllTests() {
       }),
     });
     
+    console.log(`[run-local-individual] 🔍 DEBUG: Response status: ${createResponse.status} ${createResponse.statusText}`);
+    
     if (!createResponse.ok) {
-      throw new Error(`Failed to create test results: ${await createResponse.text()}`);
+      const errorText = await createResponse.text();
+      console.error(`[run-local-individual] ❌ ERROR: Failed to create test results`);
+      console.error(`[run-local-individual] 🔍 DEBUG: Error response: ${errorText}`);
+      throw new Error(`Failed to create test results: ${errorText}`);
     }
+    const createResult = await createResponse.json();
+    console.log(`[run-local-individual] 🔍 DEBUG: Test results created: ${createResult.data?.length || 0} records`);
     console.log('   ✓ Test records created\n');
     
     // Step 3: Run each test individually

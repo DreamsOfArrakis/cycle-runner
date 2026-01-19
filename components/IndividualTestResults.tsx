@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, Clock, Loader2, Video } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 
 interface TestResult {
   id: string;
@@ -29,20 +28,16 @@ export default function IndividualTestResults({ runId, runStatus }: IndividualTe
 
   const fetchTests = async () => {
     try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from('test_results')
-        .select('*')
-        .eq('test_run_id', runId)
-        .order('test_file', { ascending: true });
+      const response = await fetch(`/api/test-results?testRunId=${runId}`);
+      const result = await response.json();
 
-      if (error) {
-        console.error('Error fetching test results:', error);
+      if (!response.ok) {
+        console.error('Error fetching test results:', result.error);
         return;
       }
 
-      if (data) {
-        setTests(data);
+      if (result.success && result.data) {
+        setTests(result.data);
       }
     } catch (error) {
       console.error('Error fetching tests:', error);

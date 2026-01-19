@@ -13,19 +13,23 @@ async function discoverTests(companyFolder = null, externalPath = null, verbose 
   const tests = [];
   
   // Only log to stderr when verbose, so stdout can be pure JSON
-  const log = verbose ? (msg) => console.error(`[discover-tests] ${msg}`) : () => {};
+  const log = verbose ? (msg) => console.error(`[discover-tests] 🔍 DEBUG: ${msg}`) : () => {};
   
   log(`Starting discovery in: ${testsDir}`);
+  log(`companyFolder: ${companyFolder || 'null'}`);
+  log(`externalPath: ${externalPath || 'null'}`);
+  log(`verbose: ${verbose}`);
   
   // Check if directory exists
   try {
     const stat = await fs.stat(testsDir);
     if (!stat.isDirectory()) {
-      log(`Path is not a directory: ${testsDir}`);
+      log(`❌ ERROR: Path is not a directory: ${testsDir}`);
       return [];
     }
+    log(`✅ Directory exists and is valid`);
   } catch (error) {
-    log(`Directory does not exist: ${testsDir} - ${error.message}`);
+    log(`❌ ERROR: Directory does not exist: ${testsDir} - ${error.message}`);
     return [];
   }
 
@@ -51,7 +55,8 @@ async function discoverTests(companyFolder = null, externalPath = null, verbose 
             continue;
           }
 
-          log(`Found test file: ${fullPath}`);
+          log(`Processing test file: ${fullPath}`);
+          log(`  Relative file path: ${relativeFilePath}`);
           const content = await fs.readFile(fullPath, 'utf-8');
 
           // Extract test names using regex
@@ -62,11 +67,13 @@ async function discoverTests(companyFolder = null, externalPath = null, verbose 
 
           while ((match = testRegex.exec(content)) !== null) {
             testCount++;
-            tests.push({
+            const testInfo = {
               testName: match[1],
               testFile: relativeFilePath, // Include folder path (e.g., 'ecommerce-store/authentication.spec.js')
               folderPath: relativePath || entry.name.replace('.spec.js', '') // Extract folder name
-            });
+            };
+            tests.push(testInfo);
+            log(`  Found test: ${testInfo.testName}`);
           }
           log(`Found ${testCount} tests in ${entry.name}`);
         }
