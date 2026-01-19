@@ -29,9 +29,10 @@ export async function GET(request: NextRequest) {
     // Check if user is admin (cyclerunner@example.com) - admins see all tests
     const isAdmin = user.email === "cyclerunner@example.com";
 
-    // Get company name from query parameter (selected from dropdown) or user's profile
+    // Get company name or suiteId from query parameters
     const { searchParams } = new URL(request.url);
     const selectedCompany = searchParams.get("company");
+    const suiteId = searchParams.get("suiteId");
     
     // Admin users can see all tests regardless of company
     // For regular users, show tests when any company is selected in the dropdown
@@ -57,17 +58,28 @@ export async function GET(request: NextRequest) {
 
     // If a company is selected in dropdown (or admin user), show all tests
 
-    // Check if any suite for this company has a github_repo configured
+    // Check if suite has a github_repo configured
     let githubRepo: string | null = null;
     let testSourcePath: string | null = null;
 
-    if (selectedCompany) {
-      // Find suites for this company
-      const supabaseAdmin = createAdminClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-      );
+    const supabaseAdmin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
+    // If suiteId is provided, get github_repo directly from that suite
+    if (suiteId) {
+      const { data: suite } = await supabaseAdmin
+        .from("test_suites")
+        .select("github_repo")
+        .eq("id", suiteId)
+        .single();
+      
+      if (suite && suite.github_repo) {
+        githubRepo = suite.github_repo;
+      }
+    } else if (selectedCompany) {
+      // Fallback: Find suites for this company
       // Get user IDs for this company
       const { data: companyProfiles } = await supabaseAdmin
         .from("profiles")
@@ -95,18 +107,30 @@ export async function GET(request: NextRequest) {
     // If github_repo is configured, ONLY use that repo (don't fall back to local)
     if (githubRepo) {
       try {
+        console.log(`[available-tests] Cloning repository: ${githubRepo}`);
         const clonedRepoPath = await cloneOrGetRepo(githubRepo);
+        console.log(`[available-tests] Cloned to: ${clonedRepoPath}`);
+        
         testSourcePath = await findTestDirectory(clonedRepoPath);
+        console.log(`[available-tests] Test directory: ${testSourcePath}`);
         
         // Update discover-tests.js to accept external path
         const runnerPath = path.join(process.cwd(), "playwright-runner");
         const command = `node discover-tests.js --external "${testSourcePath}"`;
-        const { stdout } = await execAsync(command, {
+        console.log(`[available-tests] Running: ${command}`);
+        
+        const { stdout, stderr } = await execAsync(command, {
           cwd: runnerPath,
         });
 
+        if (stderr) {
+          console.error(`[available-tests] stderr: ${stderr}`);
+        }
+        console.log(`[available-tests] stdout: ${stdout.substring(0, 500)}...`);
+
         const jsonMatch = stdout.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {
+          console.log(`[available-tests] No JSON found in output. Full output: ${stdout}`);
           // No tests found in external repo - return empty (don't fall back to local)
           return NextResponse.json({
             success: true,
@@ -115,6 +139,8 @@ export async function GET(request: NextRequest) {
         }
 
         const tests = JSON.parse(jsonMatch[0]);
+        console.log(`[available-tests] Found ${tests.length} tests`);
+        
         if (!Array.isArray(tests) || tests.length === 0) {
           // No tests found in external repo - return empty (don't fall back to local)
           return NextResponse.json({
@@ -149,7 +175,8 @@ export async function GET(request: NextRequest) {
           categories: Object.values(categories),
         });
       } catch (error: any) {
-        console.error("Error cloning repository:", error);
+        console.error(`[available-tests] Error cloning repository ${githubRepo}:`, error);
+        console.error(`[available-tests] Error stack:`, error.stack);
         // If github_repo is configured but cloning fails, return empty (don't show local tests)
         return NextResponse.json({
           success: true,

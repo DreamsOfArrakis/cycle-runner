@@ -63,9 +63,12 @@ export default function TestSelector({ suiteId, onRunTests, isRunning }: TestSel
     try {
       // Get selected company from localStorage (set by dropdown)
       const company = selectedCompany || localStorage.getItem("selectedCompany") || "";
-      const url = company 
-        ? `/api/available-tests?company=${encodeURIComponent(company)}`
-        : '/api/available-tests';
+      // Use suiteId if available (more direct than company lookup)
+      const url = suiteId
+        ? `/api/available-tests?suiteId=${encodeURIComponent(suiteId)}`
+        : company 
+          ? `/api/available-tests?company=${encodeURIComponent(company)}`
+          : '/api/available-tests';
       
       const response = await fetch(url);
       const data = await response.json();
@@ -76,6 +79,8 @@ export default function TestSelector({ suiteId, onRunTests, isRunning }: TestSel
         setExpandedCategories(new Set(data.categories.map((c: Category) => c.name)));
         // Start with all tests unchecked - user can select what they want
         setSelectedTests(new Set());
+      } else if (data.error) {
+        console.error('Error fetching tests:', data.error);
       }
     } catch (error) {
       console.error('Error fetching tests:', error);

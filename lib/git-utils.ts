@@ -46,11 +46,19 @@ export async function cloneOrGetRepo(
       }
     }
 
+    // Check if git is available
+    try {
+      await execAsync("git --version");
+    } catch (error) {
+      throw new Error("Git is not available in this environment. Cannot clone repositories.");
+    }
+
     // Clone the repository
     console.log(`📥 Cloning ${githubRepo} (branch: ${branch})...`);
     const repoUrl = `https://github.com/${githubRepo}.git`;
     await execAsync(`git clone -b ${branch} --depth 1 ${repoUrl} ${repoName}`, {
       cwd: cacheDir,
+      timeout: 60000, // 60 second timeout
     });
 
     console.log(`✅ Successfully cloned ${githubRepo}`);
