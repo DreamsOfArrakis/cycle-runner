@@ -119,27 +119,55 @@ export async function GET(request: NextRequest) {
         const command = `node discover-tests.js --external "${testSourcePath}"`;
         console.log(`[available-tests] Running: ${command}`);
         
-        const { stdout, stderr } = await execAsync(command, {
-          cwd: runnerPath,
-        });
+        let stdout = "";
+        let stderr = "";
+        try {
+          const result = await execAsync(command, {
+            cwd: runnerPath,
+            maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+          });
+          stdout = result.stdout || "";
+          stderr = result.stderr || "";
+        } catch (execError: any) {
+          console.error(`[available-tests] Error executing discover-tests:`, execError);
+          stdout = execError.stdout || "";
+          stderr = execError.stderr || execError.message || "";
+        }
 
         if (stderr) {
           console.error(`[available-tests] stderr: ${stderr}`);
         }
-        console.log(`[available-tests] stdout: ${stdout.substring(0, 500)}...`);
+        console.log(`[available-tests] stdout length: ${stdout.length}, first 1000 chars: ${stdout.substring(0, 1000)}`);
 
         const jsonMatch = stdout.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {
           console.log(`[available-tests] No JSON found in output. Full output: ${stdout}`);
+          console.log(`[available-tests] stderr output: ${stderr}`);
           // No tests found in external repo - return empty (don't fall back to local)
           return NextResponse.json({
             success: true,
             categories: [],
+            error: `No tests discovered. stdout: ${stdout.substring(0, 200)}, stderr: ${stderr.substring(0, 200)}`,
           });
         }
 
-        const tests = JSON.parse(jsonMatch[0]);
+        let tests;
+        try {
+          tests = JSON.parse(jsonMatch[0]);
+        } catch (parseError: any) {
+          console.error(`[available-tests] Error parsing JSON:`, parseError);
+          console.error(`[available-tests] JSON string: ${jsonMatch[0].substring(0, 500)}`);
+          return NextResponse.json({
+            success: true,
+            categories: [],
+            error: `Failed to parse test results: ${parseError.message}`,
+          });
+        }
+        
         console.log(`[available-tests] Found ${tests.length} tests`);
+        if (tests.length > 0) {
+          console.log(`[available-tests] First test example:`, JSON.stringify(tests[0], null, 2));
+        }
         
         if (!Array.isArray(tests) || tests.length === 0) {
           // No tests found in external repo - return empty (don't fall back to local)

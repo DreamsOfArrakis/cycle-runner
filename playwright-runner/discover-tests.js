@@ -11,10 +11,25 @@ async function discoverTests(companyFolder = null, externalPath = null) {
   // Use external path if provided, otherwise use local tests directory
   const testsDir = externalPath || path.join(__dirname, 'tests');
   const tests = [];
+  
+  console.log(`[discover-tests] Starting discovery in: ${testsDir}`);
+  
+  // Check if directory exists
+  try {
+    const stat = await fs.stat(testsDir);
+    if (!stat.isDirectory()) {
+      console.error(`[discover-tests] Path is not a directory: ${testsDir}`);
+      return [];
+    }
+  } catch (error) {
+    console.error(`[discover-tests] Directory does not exist: ${testsDir}`, error);
+    return [];
+  }
 
   async function searchDirectory(dir, relativePath = '') {
     try {
       const entries = await fs.readdir(dir, { withFileTypes: true });
+      console.log(`[discover-tests] Searching directory: ${dir} (relative: ${relativePath}), found ${entries.length} entries`);
 
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
@@ -33,20 +48,24 @@ async function discoverTests(companyFolder = null, externalPath = null) {
             continue;
           }
 
+          console.log(`[discover-tests] Found test file: ${fullPath}`);
           const content = await fs.readFile(fullPath, 'utf-8');
 
           // Extract test names using regex
           // Matches: test('test name', ...) or test("test name", ...)
           const testRegex = /test\s*\(\s*['"](.*?)['"]\s*,/g;
           let match;
+          let testCount = 0;
 
           while ((match = testRegex.exec(content)) !== null) {
+            testCount++;
             tests.push({
               testName: match[1],
               testFile: relativeFilePath, // Include folder path (e.g., 'ecommerce-store/authentication.spec.js')
               folderPath: relativePath || entry.name.replace('.spec.js', '') // Extract folder name
             });
           }
+          console.log(`[discover-tests] Found ${testCount} tests in ${entry.name}`);
         }
       }
     } catch (error) {
@@ -56,9 +75,10 @@ async function discoverTests(companyFolder = null, externalPath = null) {
 
   try {
     await searchDirectory(testsDir);
+    console.log(`[discover-tests] Total tests discovered: ${tests.length}`);
     return tests;
   } catch (error) {
-    console.error('Error discovering tests:', error);
+    console.error('[discover-tests] Error discovering tests:', error);
     return [];
   }
 }

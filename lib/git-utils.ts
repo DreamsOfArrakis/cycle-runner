@@ -85,22 +85,41 @@ export async function cloneOrGetRepo(
 
       // Extract zip using adm-zip
       const zip = new AdmZip(zipPath);
-      const extractPath = path.join(cacheDir, `${repoName}-${branch}`);
+      console.log(`📦 Extracting zip to: ${cacheDir}`);
       zip.extractAllTo(cacheDir, true);
 
-      // Move extracted folder to expected location
+      // GitHub zip archives extract with folder name like "repo-name-branch"
+      // Find the extracted folder
       const extractedFolder = path.join(cacheDir, `${repoName}-${branch}`);
+      console.log(`📁 Looking for extracted folder: ${extractedFolder}`);
+      
+      // Check if extracted folder exists
+      try {
+        const stat = await fs.stat(extractedFolder);
+        if (!stat.isDirectory()) {
+          throw new Error(`Extracted path is not a directory: ${extractedFolder}`);
+        }
+        console.log(`✅ Found extracted folder: ${extractedFolder}`);
+      } catch (error) {
+        // List what was actually extracted
+        const extractedItems = await fs.readdir(cacheDir);
+        console.error(`❌ Extracted folder not found. Items in cacheDir:`, extractedItems);
+        throw new Error(`Failed to find extracted folder. Expected: ${extractedFolder}, Found: ${extractedItems.join(', ')}`);
+      }
+
+      // Move extracted folder to expected location
       if (extractedFolder !== repoPath) {
         // Remove old if exists
         try {
           await fs.rm(repoPath, { recursive: true, force: true });
         } catch {}
+        console.log(`📦 Moving ${extractedFolder} to ${repoPath}`);
         await fs.rename(extractedFolder, repoPath);
       }
 
       // Clean up zip
       await fs.unlink(zipPath);
-      console.log(`✅ Successfully downloaded and extracted ${githubRepo}`);
+      console.log(`✅ Successfully downloaded and extracted ${githubRepo} to ${repoPath}`);
     }
 
     return repoPath;
@@ -115,6 +134,8 @@ export async function cloneOrGetRepo(
  * Looks for common test directory patterns
  */
 export async function findTestDirectory(repoPath: string): Promise<string> {
+  console.log(`[findTestDirectory] Looking for test directory in: ${repoPath}`);
+  
   const commonTestDirs = [
     "tests/e2e",
     "tests",
@@ -129,15 +150,20 @@ export async function findTestDirectory(repoPath: string): Promise<string> {
     try {
       const stat = await fs.stat(testPath);
       if (stat.isDirectory()) {
+        console.log(`[findTestDirectory] Found test directory: ${testPath}`);
+        // List files in the test directory
+        const files = await fs.readdir(testPath);
+        console.log(`[findTestDirectory] Test directory contains ${files.length} items: ${files.slice(0, 10).join(', ')}${files.length > 10 ? '...' : ''}`);
         return testPath;
       }
-    } catch {
+    } catch (error) {
       // Directory doesn't exist, try next
       continue;
     }
   }
 
   // If no test directory found, return repo root
+  console.log(`[findTestDirectory] No test directory found, using repo root: ${repoPath}`);
   return repoPath;
 }
 
