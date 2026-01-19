@@ -32,30 +32,23 @@ export default function NewTestSuitePage() {
       // Get selected company from localStorage (set by dropdown)
       const selectedCompany = localStorage.getItem("selectedCompany");
       
-      let userIdToUse = user.id;
-      
-      // If admin and a company is selected, find a user_id for that company
-      if (user.email === "cyclerunner@example.com" && selectedCompany) {
-        // Fetch a user_id for the selected company via API
-        const companyUsersResponse = await fetch(`/api/company-users?company=${encodeURIComponent(selectedCompany)}`);
-        if (companyUsersResponse.ok) {
-          const companyUsersData = await companyUsersResponse.json();
-          if (companyUsersData.success && companyUsersData.userIds && companyUsersData.userIds.length > 0) {
-            // Use the first user_id for the selected company
-            userIdToUse = companyUsersData.userIds[0];
-          }
-        }
-      }
-
-      const { error: insertError } = await supabase.from("test_suites").insert({
-        user_id: userIdToUse,
-        name,
-        description: description || null,
-        github_repo: githubRepo || null,
-        is_active: true,
+      // Use API route to create test suite (handles RLS for admin users)
+      const createResponse = await fetch("/api/suites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          description: description || null,
+          github_repo: githubRepo || null,
+          company: selectedCompany || null,
+        }),
       });
 
-      if (insertError) throw insertError;
+      const createData = await createResponse.json();
+
+      if (!createResponse.ok) {
+        throw new Error(createData.error || "Failed to create test suite");
+      }
 
       router.push("/dashboard");
       router.refresh();
