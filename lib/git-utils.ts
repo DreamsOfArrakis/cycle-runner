@@ -2,6 +2,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import fs from "fs/promises";
+import AdmZip from "adm-zip";
 
 const execAsync = promisify(exec);
 
@@ -46,22 +47,62 @@ export async function cloneOrGetRepo(
       }
     }
 
-    // Check if git is available
+    // Try git first, fallback to GitHub API zip download
+    let useGit = false;
     try {
       await execAsync("git --version");
+      useGit = true;
     } catch (error) {
-      throw new Error("Git is not available in this environment. Cannot clone repositories.");
+      console.log(`⚠️ Git not available, using GitHub API zip download`);
     }
 
-    // Clone the repository
-    console.log(`📥 Cloning ${githubRepo} (branch: ${branch})...`);
-    const repoUrl = `https://github.com/${githubRepo}.git`;
-    await execAsync(`git clone -b ${branch} --depth 1 ${repoUrl} ${repoName}`, {
-      cwd: cacheDir,
-      timeout: 60000, // 60 second timeout
-    });
+    if (useGit) {
+      // Clone the repository using git
+      console.log(`📥 Cloning ${githubRepo} (branch: ${branch}) using git...`);
+      const repoUrl = `https://github.com/${githubRepo}.git`;
+      await execAsync(`git clone -b ${branch} --depth 1 ${repoUrl} ${repoName}`, {
+        cwd: cacheDir,
+        timeout: 60000, // 60 second timeout
+      });
+      console.log(`✅ Successfully cloned ${githubRepo}`);
+    } else {
+      // Download as zip from GitHub API (for environments without git)
+      console.log(`📥 Downloading ${githubRepo} (branch: ${branch}) as zip...`);
+      const zipUrl = `https://github.com/${githubRepo}/archive/refs/heads/${branch}.zip`;
+      const zipPath = path.join(cacheDir, `${repoName}.zip`);
 
-    console.log(`✅ Successfully cloned ${githubRepo}`);
+      // Download the zip file
+      const response = await fetch(zipUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download repository: ${response.statusText}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      // Save zip file
+      await fs.writeFile(zipPath, buffer);
+
+      // Extract zip using adm-zip
+      const zip = new AdmZip(zipPath);
+      const extractPath = path.join(cacheDir, `${repoName}-${branch}`);
+      zip.extractAllTo(cacheDir, true);
+
+      // Move extracted folder to expected location
+      const extractedFolder = path.join(cacheDir, `${repoName}-${branch}`);
+      if (extractedFolder !== repoPath) {
+        // Remove old if exists
+        try {
+          await fs.rm(repoPath, { recursive: true, force: true });
+        } catch {}
+        await fs.rename(extractedFolder, repoPath);
+      }
+
+      // Clean up zip
+      await fs.unlink(zipPath);
+      console.log(`✅ Successfully downloaded and extracted ${githubRepo}`);
+    }
+
     return repoPath;
   } catch (error: any) {
     console.error(`❌ Error cloning ${githubRepo}:`, error.message);
