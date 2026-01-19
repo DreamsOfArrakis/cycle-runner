@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 import { CheckCircle, XCircle, Clock, ArrowLeft } from "lucide-react";
@@ -14,15 +15,45 @@ export default async function TestRunDetailPage({
   params: { id: string };
 }) {
   const supabase = await createClient();
+  
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  const { data: run, error } = await supabase
-    .from("test_runs")
-    .select(`
-      *,
-      test_suites(name, description)
-    `)
-    .eq("id", params.id)
-    .single();
+  // Check if user is admin (cyclerunner@example.com)
+  const isAdmin = user?.email === "cyclerunner@example.com";
+
+  // Use admin client for admin users to bypass RLS
+  let run: any = null;
+  let error: any = null;
+
+  if (isAdmin) {
+    const supabaseAdmin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+    const result = await supabaseAdmin
+      .from("test_runs")
+      .select(`
+        *,
+        test_suites(name, description)
+      `)
+      .eq("id", params.id)
+      .single();
+    run = result.data;
+    error = result.error;
+  } else {
+    const result = await supabase
+      .from("test_runs")
+      .select(`
+        *,
+        test_suites(name, description)
+      `)
+      .eq("id", params.id)
+      .single();
+    run = result.data;
+    error = result.error;
+  }
 
   if (error || !run) {
     notFound();
