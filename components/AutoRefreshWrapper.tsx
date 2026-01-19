@@ -31,8 +31,8 @@ export default function AutoRefreshWrapper({
         const response = await fetch(`/api/test-run-status/${runId}`);
         const data = await response.json();
 
-        // If status changed to completed or failed, refresh the page
-        if (data.status === 'completed' || data.status === 'failed') {
+        // If status changed to completed, failed, or cancelled, refresh the page
+        if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
           setIsPolling(false);
           router.refresh();
           clearInterval(pollInterval);

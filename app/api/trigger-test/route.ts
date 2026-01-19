@@ -184,29 +184,39 @@ async function triggerFlyioRunner(runId: string, suite: any, selectedTests?: { t
     console.log(`[trigger-test] 🔍 DEBUG: Command: node ${args.join(' ')}`);
     
     // Run in background with output visible
-    // Use process group for easier cleanup
+    // Use detached: true so it runs independently
+    // We'll kill it by PID directly since detached processes are harder to kill by process group
     const child = spawn("node", args, {
       detached: true,
       stdio: "inherit", // Show output in terminal for debugging
       cwd: path.join(process.cwd(), "playwright-runner"),
     });
     
-    child.unref(); // Allow parent to exit independently
-    
     console.log(`✅ Test runner spawned with PID: ${child.pid}`);
     
-    // Store PID for later cleanup
+    // Store PID for later cleanup - do this BEFORE unref to ensure it's saved
     try {
       const pidDir = path.join(process.cwd(), ".cursor", "test-pids");
       await fs.promises.mkdir(pidDir, { recursive: true });
       const pidFile = path.join(pidDir, `${runId}.json`);
+      const pidData = {
+        pid: child.pid,
+        runId: runId,
+        timestamp: Date.now(),
+        command: `node ${args.join(' ')}`
+      };
       await fs.promises.writeFile(
         pidFile,
-        JSON.stringify({ pid: child.pid, runId, timestamp: Date.now() })
+        JSON.stringify(pidData, null, 2)
       );
-    } catch (pidError) {
-      console.log("⚠️  Could not save PID:", pidError);
+      console.log(`[trigger-test] ✅ DEBUG: Saved PID file: ${pidFile}`);
+      console.log(`[trigger-test] 🔍 DEBUG: PID data: ${JSON.stringify(pidData)}`);
+    } catch (pidError: any) {
+      console.error(`[trigger-test] ❌ ERROR: Could not save PID:`, pidError.message);
+      console.error(`[trigger-test] 🔍 DEBUG: PID was: ${child.pid}, runId: ${runId}`);
     }
+    
+    child.unref(); // Allow parent to exit independently
   } else {
     // TODO: In production, trigger Fly.io API
     console.log("Production mode: Would trigger Fly.io here");

@@ -19,20 +19,27 @@ export async function POST(
     }
 
     // Update test run status to cancelled
-    const { error: updateError } = await supabase
+    console.log(`[stop-test] 🔍 DEBUG: Updating database status to cancelled for runId: ${id}`);
+    const { error: updateError, data: updateData } = await supabase
       .from("test_runs")
       .update({
         status: "cancelled",
         completed_at: new Date().toISOString(),
       })
-      .eq("id", id);
+      .eq("id", id)
+      .select();
 
     if (updateError) {
-      console.error("Error updating test run status:", updateError);
+      console.error(`[stop-test] ❌ ERROR: Failed to update database:`, updateError);
       return NextResponse.json(
         { error: "Failed to cancel test run" },
         { status: 500 }
       );
+    }
+
+    console.log(`[stop-test] ✅ DEBUG: Database updated successfully`);
+    if (updateData && updateData.length > 0) {
+      console.log(`[stop-test] 🔍 DEBUG: Updated test run status: ${updateData[0].status}`);
     }
 
     // Try to kill the process if we have the PID
@@ -67,38 +74,122 @@ export async function POST(
                 await execAsync(`ps -p ${pid} > /dev/null 2>&1`);
                 console.log(`[stop-test] 🔍 DEBUG: Process ${pid} exists, attempting to kill`);
                 
-                // Try SIGTERM first (graceful)
+                // Try multiple kill strategies - be aggressive
+                // Strategy 1: Direct kill first (most reliable)
+                try {
+                  process.kill(pid, "SIGTERM");
+                  console.log(`[stop-test] 🔍 DEBUG: Sent SIGTERM to process ${pid}`);
+                } catch (directError) {
+                  console.log(`[stop-test] 🔍 DEBUG: Direct SIGTERM failed: ${directError}`);
+                }
+                
+                // Strategy 2: Try process group kill
                 try {
                   process.kill(-pid, "SIGTERM");
                   console.log(`[stop-test] 🔍 DEBUG: Sent SIGTERM to process group ${pid}`);
-                  
-                  // Wait a bit, then force kill if still running
-                  await new Promise(resolve => setTimeout(resolve, 2000));
-                  
-                  try {
-                    await execAsync(`ps -p ${pid} > /dev/null 2>&1`);
-                    // Still running, force kill
-                    process.kill(-pid, "SIGKILL");
-                    console.log(`[stop-test] 🔍 DEBUG: Force killed process group ${pid}`);
-                  } catch {
-                    console.log(`[stop-test] ✅ Process ${pid} terminated gracefully`);
+                } catch (groupError) {
+                  // Ignore - process group might not exist
+                }
+                
+                // Strategy 3: Kill all child processes immediately
+                try {
+                  const { stdout: children } = await execAsync(`pgrep -P ${pid} 2>/dev/null || true`);
+                  if (children.trim()) {
+                    const childPids = children.trim().split('\n').filter(p => p);
+                    console.log(`[stop-test] 🔍 DEBUG: Found ${childPids.length} child processes`);
+                    for (const childPid of childPids) {
+                      try {
+                        process.kill(parseInt(childPid), "SIGKILL");
+                        console.log(`[stop-test] 🔍 DEBUG: Killed child process ${childPid}`);
+                      } catch (e) {
+                        // Ignore errors
+                      }
+                    }
                   }
-                } catch (killError: any) {
-                  console.log(`[stop-test] ⚠️  Error killing process: ${killError.message}`);
-                  // Try direct kill as fallback
+                } catch (childError) {
+                  // Ignore child process errors
+                }
+                
+                // Wait a bit, then force kill if still running
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // Check if still running and force kill
+                try {
+                  await execAsync(`ps -p ${pid} > /dev/null 2>&1`);
+                  // Still running, force kill with all methods
+                  console.log(`[stop-test] 🔍 DEBUG: Process still running, force killing...`);
+                  
+                  // Try direct kill first
                   try {
                     process.kill(pid, "SIGKILL");
-                    console.log(`[stop-test] ✅ Force killed process ${pid}`);
-                  } catch (fallbackError) {
-                    console.log(`[stop-test] ⚠️  Could not kill process ${pid}`);
+                    console.log(`[stop-test] 🔍 DEBUG: Sent SIGKILL to process ${pid}`);
+                  } catch (e) {
+                    // Ignore
                   }
+                  
+                  // Try process group kill
+                  try {
+                    process.kill(-pid, "SIGKILL");
+                    console.log(`[stop-test] 🔍 DEBUG: Sent SIGKILL to process group ${pid}`);
+                  } catch (e) {
+                    // Ignore
+                  }
+                  
+                  // Use pkill as fallback
+                  try {
+                    await execAsync(`pkill -9 -P ${pid} 2>/dev/null || true`);
+                    console.log(`[stop-test] 🔍 DEBUG: Killed all children of ${pid}`);
+                  } catch (e) {
+                    // Ignore
+                  }
+                  
+                  // Also kill any Playwright Chrome processes that might be orphaned
+                  try {
+                    await execAsync(`pkill -f "run-local-individual.*${id}" 2>/dev/null || true`);
+                    console.log(`[stop-test] 🔍 DEBUG: Killed any processes matching runId`);
+                  } catch (pkillError) {
+                    // Ignore
+                  }
+                  
+                  // Final check
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  try {
+                    await execAsync(`ps -p ${pid} > /dev/null 2>&1`);
+                    console.log(`[stop-test] ⚠️  Process ${pid} may still be running`);
+                  } catch {
+                    console.log(`[stop-test] ✅ Process ${pid} terminated`);
+                  }
+                  
+                } catch {
+                  console.log(`[stop-test] ✅ Process ${pid} terminated`);
                 }
               } catch (psError) {
                 console.log(`[stop-test] ⚠️  Process ${pid} may have already exited`);
+                
+                // Even if process doesn't exist, try to kill any orphaned Playwright processes
+                try {
+                  await execAsync(`pkill -f "run-local-individual.*${id}" || true`);
+                  console.log(`[stop-test] 🔍 DEBUG: Attempted to kill orphaned processes`);
+                } catch (pkillError) {
+                  // Ignore
+                }
               }
             }
           } catch (killError: any) {
             console.error(`[stop-test] ❌ ERROR: Failed to kill process ${pid}:`, killError.message);
+            
+            // Last resort: try to kill by process name pattern
+            if (process.platform !== "win32") {
+              try {
+                const { exec } = require("child_process");
+                const { promisify } = require("util");
+                const execAsync = promisify(exec);
+                await execAsync(`pkill -f "run-local-individual.*${id}" || true`);
+                console.log(`[stop-test] 🔍 DEBUG: Attempted fallback kill by process name`);
+              } catch (fallbackError) {
+                // Ignore
+              }
+            }
           }
 
           // Clean up PID file
@@ -114,21 +205,109 @@ export async function POST(
       } else {
         console.log(`[stop-test] ⚠️  PID file not found: ${pidFilePath}`);
         
-        // Try to find any node/playwright processes that might be related
+        // Try to find the process by searching for the runId in command line
         if (process.platform !== "win32") {
           try {
             const { exec } = require("child_process");
             const { promisify } = require("util");
             const execAsync = promisify(exec);
             
-            // Look for node processes running playwright
-            const { stdout } = await execAsync(`ps aux | grep -E "node.*run-local-individual|playwright" | grep -v grep || true`);
+            console.log(`[stop-test] 🔍 DEBUG: Searching for process with runId: ${id}`);
+            
+            // Look for node processes running run-local-individual with this specific runId
+            // The command will be: node run-local-individual.js <runId> ...
+            // Use ps with -f flag to see full command line, and search for the runId
+            const { stdout } = await execAsync(`ps -ef | grep "run-local-individual" | grep "${id}" | grep -v grep || true`);
+            
             if (stdout.trim()) {
-              console.log(`[stop-test] 🔍 DEBUG: Found potential test processes:`);
+              console.log(`[stop-test] 🔍 DEBUG: Found test process:`);
               console.log(stdout);
+              
+              // Extract PID from the ps output (second column)
+              const lines = stdout.trim().split('\n');
+              for (const line of lines) {
+                const parts = line.trim().split(/\s+/);
+                if (parts.length >= 2) {
+                  const pid = parseInt(parts[1]);
+                  if (!isNaN(pid)) {
+                    console.log(`[stop-test] 🔍 DEBUG: Attempting to kill process ${pid} found by search`);
+                    
+                    // Try to kill this process
+                    try {
+                      process.kill(pid, "SIGTERM");
+                      console.log(`[stop-test] 🔍 DEBUG: Sent SIGTERM to process ${pid}`);
+                      
+                      // Wait and force kill
+                      await new Promise(resolve => setTimeout(resolve, 1000));
+                      
+                      try {
+                        await execAsync(`ps -p ${pid} > /dev/null 2>&1`);
+                        // Still running, force kill
+                        process.kill(pid, "SIGKILL");
+                        console.log(`[stop-test] ✅ Force killed process ${pid}`);
+                      } catch {
+                        console.log(`[stop-test] ✅ Process ${pid} terminated`);
+                      }
+                      
+                      // Kill child processes
+                      try {
+                        await execAsync(`pkill -9 -P ${pid} 2>/dev/null || true`);
+                        console.log(`[stop-test] 🔍 DEBUG: Killed children of ${pid}`);
+                      } catch (e) {
+                        // Ignore
+                      }
+                    } catch (killError: any) {
+                      console.log(`[stop-test] ⚠️  Could not kill process ${pid}: ${killError.message}`);
+                    }
+                  }
+                }
+              }
+              
+              // Also try pkill as a fallback (more aggressive)
+              try {
+                const killResult = await execAsync(`pkill -9 -f "run-local-individual.*${id}" 2>&1 || true`);
+                if (killResult.stdout || killResult.stderr) {
+                  console.log(`[stop-test] 🔍 DEBUG: pkill result: ${killResult.stdout || killResult.stderr}`);
+                } else {
+                  console.log(`[stop-test] 🔍 DEBUG: Used pkill to kill processes matching runId`);
+                }
+              } catch (pkillError: any) {
+                console.log(`[stop-test] 🔍 DEBUG: pkill error (may be normal if no process found): ${pkillError.message}`);
+              }
+              
+              // Also kill any Playwright Chrome processes that might be orphaned
+              try {
+                await execAsync(`pkill -9 -f "Google Chrome for Testing.*playwright" 2>/dev/null || true`);
+                console.log(`[stop-test] 🔍 DEBUG: Killed orphaned Playwright Chrome processes`);
+              } catch (chromeError) {
+                // Ignore
+              }
+            } else {
+              console.log(`[stop-test] 🔍 DEBUG: No process found matching runId ${id}`);
+              
+              // Try pkill anyway as a fallback (maybe process name doesn't match exactly)
+              try {
+                await execAsync(`pkill -9 -f "run-local-individual.*${id}" 2>/dev/null || true`);
+                console.log(`[stop-test] 🔍 DEBUG: Attempted pkill fallback for runId ${id}`);
+              } catch (pkillError) {
+                // Ignore
+              }
+              
+              // Last resort: show all test-related processes
+              try {
+                const { stdout: allProcesses } = await execAsync(`ps aux | grep -E "run-local-individual|playwright.*test" | grep -v grep || true`);
+                if (allProcesses.trim()) {
+                  console.log(`[stop-test] 🔍 DEBUG: All test-related processes:`);
+                  console.log(allProcesses);
+                } else {
+                  console.log(`[stop-test] 🔍 DEBUG: No test-related processes found`);
+                }
+              } catch (e) {
+                // Ignore
+              }
             }
-          } catch (searchError) {
-            // Ignore search errors
+          } catch (searchError: any) {
+            console.error(`[stop-test] ❌ ERROR: Search failed:`, searchError.message);
           }
         }
       }
