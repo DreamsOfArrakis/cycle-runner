@@ -95,7 +95,7 @@ export async function POST(
                 try {
                   const { stdout: children } = await execAsync(`pgrep -P ${pid} 2>/dev/null || true`);
                   if (children.trim()) {
-                    const childPids = children.trim().split('\n').filter(p => p);
+                    const childPids = children.trim().split('\n').filter((p: string) => p);
                     console.log(`[stop-test] 🔍 DEBUG: Found ${childPids.length} child processes`);
                     for (const childPid of childPids) {
                       try {
