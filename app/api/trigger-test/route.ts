@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,6 +16,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const isAdmin = user.email === "cyclerunner@example.com";
+
     const body = await request.json();
     const { suiteId, selectedTests } = body;
 
@@ -25,13 +28,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify the suite belongs to the user
-    const { data: suite, error: suiteError } = await supabase
-      .from("test_suites")
-      .select("*")
-      .eq("id", suiteId)
-      .eq("user_id", user.id)
-      .single();
+    // Verify the suite - allow admin to access any suite
+    let suite: any = null;
+    let suiteError: any = null;
+
+    if (isAdmin) {
+      const supabaseAdmin = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
+      const result = await supabaseAdmin
+        .from("test_suites")
+        .select("*")
+        .eq("id", suiteId)
+        .single();
+      suite = result.data;
+      suiteError = result.error;
+    } else {
+      const result = await supabase
+        .from("test_suites")
+        .select("*")
+        .eq("id", suiteId)
+        .eq("user_id", user.id)
+        .single();
+      suite = result.data;
+      suiteError = result.error;
+    }
 
     if (suiteError || !suite) {
       return NextResponse.json(
@@ -41,10 +63,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Create a new test run record
-    const { data: testRun, error: runError } = await supabase
+    // Use suite's user_id (owner) when admin triggers, otherwise use current user's id
+    const runUserId = isAdmin ? suite.user_id : user.id;
+    
+    // Use admin client for insert if admin is triggering for another company's suite
+    const clientForInsert = isAdmin ? createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    ) : supabase;
+    
+    const { data: testRun, error: runError } = await clientForInsert
       .from("test_runs")
       .insert({
-        user_id: user.id,
+        user_id: runUserId,
         suite_id: suiteId,
         status: "pending",
         triggered_by: "manual",
@@ -61,7 +92,13 @@ export async function POST(request: NextRequest) {
 
     // TODO: In Phase 1, we'll trigger Fly.io here
     // For now, we'll simulate it by updating status to "running"
-    await supabase
+    // Use admin client for update if admin triggered
+    const clientForUpdate = isAdmin ? createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    ) : supabase;
+    
+    await clientForUpdate
       .from("test_runs")
       .update({ 
         status: "running",
