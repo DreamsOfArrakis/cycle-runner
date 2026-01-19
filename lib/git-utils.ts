@@ -17,8 +17,14 @@ export async function cloneOrGetRepo(
   branch: string = "main"
 ): Promise<string> {
   const repoName = githubRepo.split("/").pop() || githubRepo;
-  const cacheDir = path.join(process.cwd(), ".cache", "repos");
+  // Use /tmp on Vercel/serverless, otherwise use .cache in project
+  const isVercel = process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME;
+  const cacheDir = isVercel 
+    ? path.join("/tmp", "cycle-runner-repos")
+    : path.join(process.cwd(), ".cache", "repos");
   const repoPath = path.join(cacheDir, repoName);
+  
+  console.log(`[cloneOrGetRepo] Using cache directory: ${cacheDir} (Vercel: ${isVercel})`);
 
   // Ensure cache directory exists
   await fs.mkdir(cacheDir, { recursive: true });
