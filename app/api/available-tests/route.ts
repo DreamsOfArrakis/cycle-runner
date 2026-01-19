@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // If github_repo is configured, clone it and discover tests from there
+    // If github_repo is configured, ONLY use that repo (don't fall back to local)
     if (githubRepo) {
       try {
         const clonedRepoPath = await cloneOrGetRepo(githubRepo);
@@ -107,6 +107,7 @@ export async function GET(request: NextRequest) {
 
         const jsonMatch = stdout.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {
+          // No tests found in external repo - return empty (don't fall back to local)
           return NextResponse.json({
             success: true,
             categories: [],
@@ -115,6 +116,7 @@ export async function GET(request: NextRequest) {
 
         const tests = JSON.parse(jsonMatch[0]);
         if (!Array.isArray(tests) || tests.length === 0) {
+          // No tests found in external repo - return empty (don't fall back to local)
           return NextResponse.json({
             success: true,
             categories: [],
@@ -148,12 +150,17 @@ export async function GET(request: NextRequest) {
         });
       } catch (error: any) {
         console.error("Error cloning repository:", error);
-        // Fall back to local tests if cloning fails
+        // If github_repo is configured but cloning fails, return empty (don't show local tests)
+        return NextResponse.json({
+          success: true,
+          categories: [],
+          error: `Failed to clone repository ${githubRepo}: ${error.message}`,
+        });
       }
     }
 
-    // Fallback to local tests (for ecommerce-store or if no github_repo)
-    // Map company name to folder name
+    // Only use local tests if NO github_repo is configured
+    // Map company name to folder name for local tests
     let companyFolder = null;
     if (selectedCompany) {
       const normalized = selectedCompany
@@ -163,8 +170,15 @@ export async function GET(request: NextRequest) {
         .replace(/\s+/g, '-')
         .replace(/-+/g, '-');
       
+      // Only show local tests for ecommerce-store (which doesn't have github_repo)
       if (normalized.includes('ecommerce') || normalized.includes('e-commerce')) {
         companyFolder = 'ecommerce-store';
+      } else {
+        // For other companies without github_repo, return empty
+        return NextResponse.json({
+          success: true,
+          categories: [],
+        });
       }
     }
 
