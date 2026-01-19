@@ -139,7 +139,14 @@ export async function GET(request: NextRequest) {
         }
         console.log(`[available-tests] stdout length: ${stdout.length}, first 1000 chars: ${stdout.substring(0, 1000)}`);
 
-        const jsonMatch = stdout.match(/\[[\s\S]*\]/);
+        // Parse JSON from stdout - should be a clean JSON array now
+        // Try to find JSON array in output (may have some stderr mixed in)
+        let jsonMatch = stdout.match(/^\s*\[[\s\S]*\]\s*$/m);
+        if (!jsonMatch) {
+          // Try to find any JSON array in the output
+          jsonMatch = stdout.match(/\[[\s\S]*\]/);
+        }
+        
         if (!jsonMatch) {
           console.log(`[available-tests] No JSON found in output. Full output: ${stdout}`);
           console.log(`[available-tests] stderr output: ${stderr}`);
@@ -153,10 +160,12 @@ export async function GET(request: NextRequest) {
 
         let tests;
         try {
+          // Parse the JSON array
           tests = JSON.parse(jsonMatch[0]);
         } catch (parseError: any) {
           console.error(`[available-tests] Error parsing JSON:`, parseError);
-          console.error(`[available-tests] JSON string: ${jsonMatch[0].substring(0, 500)}`);
+          console.error(`[available-tests] JSON string (first 500 chars): ${jsonMatch[0].substring(0, 500)}`);
+          console.error(`[available-tests] Full stdout: ${stdout}`);
           return NextResponse.json({
             success: true,
             categories: [],

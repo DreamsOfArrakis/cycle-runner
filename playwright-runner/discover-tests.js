@@ -7,29 +7,32 @@ const path = require('path');
  * @param {string} companyFolder - Optional folder name to filter by (e.g., 'ecommerce-store')
  * @param {string} externalPath - Optional path to external repository (when github_repo is configured)
  */
-async function discoverTests(companyFolder = null, externalPath = null) {
+async function discoverTests(companyFolder = null, externalPath = null, verbose = false) {
   // Use external path if provided, otherwise use local tests directory
   const testsDir = externalPath || path.join(__dirname, 'tests');
   const tests = [];
   
-  console.log(`[discover-tests] Starting discovery in: ${testsDir}`);
+  // Only log to stderr when verbose, so stdout can be pure JSON
+  const log = verbose ? (msg) => console.error(`[discover-tests] ${msg}`) : () => {};
+  
+  log(`Starting discovery in: ${testsDir}`);
   
   // Check if directory exists
   try {
     const stat = await fs.stat(testsDir);
     if (!stat.isDirectory()) {
-      console.error(`[discover-tests] Path is not a directory: ${testsDir}`);
+      log(`Path is not a directory: ${testsDir}`);
       return [];
     }
   } catch (error) {
-    console.error(`[discover-tests] Directory does not exist: ${testsDir}`, error);
+    log(`Directory does not exist: ${testsDir} - ${error.message}`);
     return [];
   }
 
   async function searchDirectory(dir, relativePath = '') {
     try {
       const entries = await fs.readdir(dir, { withFileTypes: true });
-      console.log(`[discover-tests] Searching directory: ${dir} (relative: ${relativePath}), found ${entries.length} entries`);
+      log(`Searching directory: ${dir} (relative: ${relativePath}), found ${entries.length} entries`);
 
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
@@ -48,7 +51,7 @@ async function discoverTests(companyFolder = null, externalPath = null) {
             continue;
           }
 
-          console.log(`[discover-tests] Found test file: ${fullPath}`);
+          log(`Found test file: ${fullPath}`);
           const content = await fs.readFile(fullPath, 'utf-8');
 
           // Extract test names using regex
@@ -65,20 +68,20 @@ async function discoverTests(companyFolder = null, externalPath = null) {
               folderPath: relativePath || entry.name.replace('.spec.js', '') // Extract folder name
             });
           }
-          console.log(`[discover-tests] Found ${testCount} tests in ${entry.name}`);
+          log(`Found ${testCount} tests in ${entry.name}`);
         }
       }
     } catch (error) {
-      console.error(`Error reading directory ${dir}:`, error);
+      log(`Error reading directory ${dir}: ${error.message}`);
     }
   }
 
   try {
     await searchDirectory(testsDir);
-    console.log(`[discover-tests] Total tests discovered: ${tests.length}`);
+    log(`Total tests discovered: ${tests.length}`);
     return tests;
   } catch (error) {
-    console.error('[discover-tests] Error discovering tests:', error);
+    log(`Error discovering tests: ${error.message}`);
     return [];
   }
 }
@@ -89,6 +92,7 @@ module.exports = { discoverTests };
 if (require.main === module) {
   let companyFolder = null;
   let externalPath = null;
+  let verbose = false;
   
   // Parse command line arguments
   const args = process.argv.slice(2);
@@ -96,14 +100,17 @@ if (require.main === module) {
     if (args[i] === '--external' && args[i + 1]) {
       externalPath = args[i + 1];
       i++; // Skip next arg as it's the path value
+    } else if (args[i] === '--verbose' || args[i] === '-v') {
+      verbose = true;
     } else if (!args[i].startsWith('--')) {
       // If not a flag, treat as company folder (backward compatibility)
       companyFolder = args[i];
     }
   }
   
-  discoverTests(companyFolder, externalPath).then(tests => {
-    console.log('Discovered tests:');
+  discoverTests(companyFolder, externalPath, verbose).then(tests => {
+    // Output ONLY JSON to stdout (for parsing by API route)
+    // Use stderr for any logging if verbose mode
     console.log(JSON.stringify(tests, null, 2));
   });
 }
