@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import Footer from "@/components/Footer";
-import Link from "next/link";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -149,18 +148,6 @@ export default function LoginPage() {
                 {loading ? "Signing in..." : "Sign In"}
               </button>
 
-              <div className="text-center pt-2">
-                <p className="text-sm text-gray-600">
-                  Don't have an account?{" "}
-                  <Link
-                    href="/signup"
-                    className="font-medium transition hover:opacity-80"
-                    style={{ color: '#FD5D1C' }}
-                  >
-                    Sign up
-                  </Link>
-                </p>
-              </div>
             </div>
           </form>
         </div>
