@@ -140,9 +140,12 @@ async function triggerFlyioRunner(runId: string, suite: any, selectedTests?: { t
     const fs = await import("fs");
     
     const runnerPath = path.join(process.cwd(), "playwright-runner", "run-local-individual.js");
-    const apiUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    // Use the request URL to determine the correct API URL (handles different ports)
+    const requestUrl = new URL(request.url);
+    const apiUrl = process.env.NEXT_PUBLIC_APP_URL || `${requestUrl.protocol}//${requestUrl.host}`;
     
     console.log(`Spawning local test runner: ${runnerPath}`);
+    console.log(`Using API URL: ${apiUrl}`);
     
     // Pass selected tests and github_repo as JSON argument
     const args = [runnerPath, runId, apiUrl];
