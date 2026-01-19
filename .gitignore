@@ -43,3 +43,6 @@ next-env.d.ts
 # Supabase temp files
 supabase/.temp/
 
+# Git cloned repositories cache
+.cache/
+

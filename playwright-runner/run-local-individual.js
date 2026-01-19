@@ -102,22 +102,42 @@ function humanizeError(technicalError) {
 // Get arguments
 const RUN_ID = process.argv[2];
 const API_URL = process.argv[3] || 'http://localhost:3000';
-const SELECTED_TESTS_JSON = process.argv[4]; // Optional: JSON array of selected tests
+const CONFIG_JSON = process.argv[4]; // JSON config with selectedTests and githubRepo
 
 if (!RUN_ID) {
-  console.error('Usage: node run-local-individual.js <RUN_ID> [API_URL] [SELECTED_TESTS_JSON]');
+  console.error('Usage: node run-local-individual.js <RUN_ID> [API_URL] [CONFIG_JSON]');
   process.exit(1);
 }
 
-// Parse selected tests if provided
+// Parse config (selectedTests and githubRepo)
 let selectedTestsFilter = null;
-if (SELECTED_TESTS_JSON) {
-  try {
-    selectedTestsFilter = JSON.parse(SELECTED_TESTS_JSON);
-    console.log(`📋 Running ${selectedTestsFilter.length} selected tests`);
-  } catch (err) {
-    console.error('❌ Failed to parse selected tests JSON:', err.message);
-    process.exit(1);
+let githubRepo = null;
+let externalTestPath = null;
+
+// Initialize async - we'll handle this in runAllTests
+async function initializeConfig() {
+  if (CONFIG_JSON) {
+    try {
+      const config = JSON.parse(CONFIG_JSON);
+      selectedTestsFilter = config.selectedTests || null;
+      githubRepo = config.githubRepo || null;
+      
+      if (selectedTestsFilter && selectedTestsFilter.length > 0) {
+        console.log(`📋 Running ${selectedTestsFilter.length} selected tests`);
+      }
+      
+      // If github_repo is configured, clone it
+      if (githubRepo) {
+        console.log(`📥 Cloning repository: ${githubRepo}...`);
+        const { cloneOrGetRepo, findTestDirectory } = require('../lib/git-utils');
+        const clonedRepoPath = await cloneOrGetRepo(githubRepo);
+        externalTestPath = await findTestDirectory(clonedRepoPath);
+        console.log(`✅ Using tests from: ${externalTestPath}`);
+      }
+    } catch (err) {
+      console.error('❌ Failed to parse config JSON:', err.message);
+      process.exit(1);
+    }
   }
 }
 
@@ -151,10 +171,17 @@ async function runIndividualTest(testFile, testName) {
     // Escape special regex characters in test name
     const escapedTestName = testName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     
+    // Use external test path if configured, otherwise use local
+    const testCwd = externalTestPath || __dirname;
+    // If using external path, testFile should be relative to that path
+    const testFilePath = externalTestPath 
+      ? path.join(externalTestPath, testFile.replace(/^.*\//, '')) // Just filename if external
+      : testFile;
+    
     const { stdout, stderr } = await execAsync(
-      `npx playwright test ${testFile} --grep "${escapedTestName}" --reporter=json`,
+      `npx playwright test "${testFilePath}" --grep "${escapedTestName}" --reporter=json`,
       {
-        cwd: __dirname,
+        cwd: testCwd,
         env: {
           ...process.env,
           FORCE_COLOR: '0',
@@ -328,9 +355,12 @@ async function runAllTests() {
   const overallStartTime = Date.now();
   
   try {
-    // Step 1: Discover all tests
+    // Initialize config (clone repo if needed)
+    await initializeConfig();
+    
+    // Step 1: Discover all tests (from external repo if configured, otherwise local)
     console.log('📋 Discovering tests...');
-    let tests = await discoverTests();
+    let tests = await discoverTests(null, externalTestPath);
     console.log(`   Found ${tests.length} total tests\n`);
     
     // Filter tests if selectedTestsFilter is provided

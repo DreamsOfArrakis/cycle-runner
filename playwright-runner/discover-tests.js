@@ -5,9 +5,11 @@ const path = require('path');
  * Recursively discovers all Playwright tests from test files
  * Returns array of { testName, testFile, folderPath }
  * @param {string} companyFolder - Optional folder name to filter by (e.g., 'ecommerce-store')
+ * @param {string} externalPath - Optional path to external repository (when github_repo is configured)
  */
-async function discoverTests(companyFolder = null) {
-  const testsDir = path.join(__dirname, 'tests');
+async function discoverTests(companyFolder = null, externalPath = null) {
+  // Use external path if provided, otherwise use local tests directory
+  const testsDir = externalPath || path.join(__dirname, 'tests');
   const tests = [];
 
   async function searchDirectory(dir, relativePath = '') {
@@ -65,8 +67,22 @@ module.exports = { discoverTests };
 
 // Allow running standalone for debugging
 if (require.main === module) {
-  const companyFolder = process.argv[2] || null; // Allow passing company folder as argument
-  discoverTests(companyFolder).then(tests => {
+  let companyFolder = null;
+  let externalPath = null;
+  
+  // Parse command line arguments
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--external' && args[i + 1]) {
+      externalPath = args[i + 1];
+      i++; // Skip next arg as it's the path value
+    } else if (!args[i].startsWith('--')) {
+      // If not a flag, treat as company folder (backward compatibility)
+      companyFolder = args[i];
+    }
+  }
+  
+  discoverTests(companyFolder, externalPath).then(tests => {
     console.log('Discovered tests:');
     console.log(JSON.stringify(tests, null, 2));
   });

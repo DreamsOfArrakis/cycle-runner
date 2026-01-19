@@ -144,11 +144,13 @@ async function triggerFlyioRunner(runId: string, suite: any, selectedTests?: { t
     
     console.log(`Spawning local test runner: ${runnerPath}`);
     
-    // Pass selected tests as JSON argument
+    // Pass selected tests and github_repo as JSON argument
     const args = [runnerPath, runId, apiUrl];
-    if (selectedTests && selectedTests.length > 0) {
-      args.push(JSON.stringify(selectedTests));
-    }
+    const runnerConfig = {
+      selectedTests: selectedTests || [],
+      githubRepo: suite.github_repo || null,
+    };
+    args.push(JSON.stringify(runnerConfig));
     
     // Run in background with output visible
     // Use process group for easier cleanup
