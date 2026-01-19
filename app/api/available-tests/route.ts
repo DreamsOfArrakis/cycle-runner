@@ -55,9 +55,34 @@ export async function GET(request: NextRequest) {
 
     // If a company is selected in dropdown (or admin user), show all tests
 
-    // Run the test discovery script
+    // Map company name to folder name
+    // Normalize company name to match folder structure
+    let companyFolder = null;
+    if (selectedCompany) {
+      // Convert company name to folder name format
+      // "E-commerce Store" -> "ecommerce-store"
+      // "The Furniture Store" -> "the-furniture-store"
+      const normalized = selectedCompany
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9\s-]/g, '') // Remove special chars
+        .replace(/\s+/g, '-') // Replace spaces with hyphens
+        .replace(/-+/g, '-'); // Replace multiple hyphens with single
+      
+      // Map known company names to folder names
+      if (normalized.includes('ecommerce') || normalized.includes('e-commerce')) {
+        companyFolder = 'ecommerce-store';
+      } else if (normalized.includes('furniture')) {
+        companyFolder = 'the-furniture-store';
+      }
+    }
+
+    // Run the test discovery script with optional company folder filter
     const runnerPath = path.join(process.cwd(), "playwright-runner");
-    const { stdout } = await execAsync("node discover-tests.js", {
+    const command = companyFolder 
+      ? `node discover-tests.js ${companyFolder}`
+      : "node discover-tests.js";
+    const { stdout } = await execAsync(command, {
       cwd: runnerPath,
     });
 
@@ -82,8 +107,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Group tests by category (file)
+    // testFile now includes folder path (e.g., "ecommerce-store/authentication.spec.js")
     const categories = tests.reduce((acc: any, test: any) => {
-      const category = test.testFile.replace(".spec.js", "");
+      // Extract just the filename without folder path for category name
+      const fileName = test.testFile.split('/').pop() || test.testFile;
+      const category = fileName.replace(".spec.js", "");
       if (!acc[category]) {
         acc[category] = {
           name: category,
@@ -96,7 +124,7 @@ export async function GET(request: NextRequest) {
       }
       acc[category].tests.push({
         name: test.testName,
-        file: test.testFile,
+        file: test.testFile, // Keep full path including folder
       });
       return acc;
     }, {});

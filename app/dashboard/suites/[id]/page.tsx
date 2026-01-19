@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -12,24 +13,68 @@ export default async function TestSuitePage({
   params: { id: string };
 }) {
   const supabase = await createClient();
+  
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  const { data: suite, error } = await supabase
-    .from("test_suites")
-    .select("*")
-    .eq("id", params.id)
-    .single();
+  // Check if user is admin (cyclerunner@example.com)
+  const isAdmin = user?.email === "cyclerunner@example.com";
+
+  // Use admin client for admin users to bypass RLS
+  let suite: any = null;
+  let error: any = null;
+
+  if (isAdmin) {
+    const supabaseAdmin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+    const result = await supabaseAdmin
+      .from("test_suites")
+      .select("*")
+      .eq("id", params.id)
+      .single();
+    suite = result.data;
+    error = result.error;
+  } else {
+    const result = await supabase
+      .from("test_suites")
+      .select("*")
+      .eq("id", params.id)
+      .single();
+    suite = result.data;
+    error = result.error;
+  }
 
   if (error || !suite) {
     notFound();
   }
 
   // Get recent test runs for this suite
-  const { data: testRuns } = await supabase
-    .from("test_runs")
-    .select("*")
-    .eq("suite_id", params.id)
-    .order("created_at", { ascending: false })
-    .limit(10);
+  // Use admin client for admin users to bypass RLS
+  let testRuns: any[] = [];
+  if (isAdmin) {
+    const supabaseAdmin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+    const result = await supabaseAdmin
+      .from("test_runs")
+      .select("*")
+      .eq("suite_id", params.id)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    testRuns = result.data || [];
+  } else {
+    const result = await supabase
+      .from("test_runs")
+      .select("*")
+      .eq("suite_id", params.id)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    testRuns = result.data || [];
+  }
 
   return (
     <div className="space-y-6">
