@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { StopCircle, Loader2 } from 'lucide-react';
 
@@ -12,10 +12,46 @@ interface StopTestButtonProps {
 export default function StopTestButton({ runId, status }: StopTestButtonProps) {
   const router = useRouter();
   const [isStopping, setIsStopping] = useState(false);
+  const [hasStopped, setHasStopped] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState(status);
 
-  // Only show button if test is running
-  if (status !== 'running' && status !== 'pending') {
+  // Update current status when prop changes
+  useEffect(() => {
+    setCurrentStatus(status);
+  }, [status]);
+
+  // Poll status after stopping to detect cancellation
+  useEffect(() => {
+    if (isStopping || hasStopped) {
+      const pollStatus = async () => {
+        try {
+          const response = await fetch(`/api/test-run-status/${runId}`);
+          const data = await response.json();
+          if (data.status) {
+            setCurrentStatus(data.status);
+            if (data.status === 'cancelled' || data.status === 'completed' || data.status === 'failed') {
+              setIsStopping(false);
+              setHasStopped(false);
+              router.refresh();
+            }
+          }
+        } catch (error) {
+          console.error('Error polling status:', error);
+        }
+      };
+
+      const interval = setInterval(pollStatus, 500); // Poll every 500ms
+      return () => clearInterval(interval);
+    }
+  }, [isStopping, hasStopped, runId, router]);
+
+  // Only show button if test is running and hasn't been stopped
+  if (currentStatus !== 'running' && currentStatus !== 'pending') {
     return null;
+  }
+
+  if (hasStopped) {
+    return null; // Hide button immediately after stopping
   }
 
   const handleStop = async () => {
@@ -24,6 +60,7 @@ export default function StopTestButton({ runId, status }: StopTestButtonProps) {
     }
 
     setIsStopping(true);
+    setHasStopped(true); // Hide button immediately
 
     try {
       const response = await fetch(`/api/stop-test/${runId}`, {
@@ -33,16 +70,18 @@ export default function StopTestButton({ runId, status }: StopTestButtonProps) {
       const data = await response.json();
 
       if (data.success) {
-        // Refresh the page to show updated status
-        router.refresh();
+        // Status polling will handle the refresh
+        // Don't reset hasStopped here - let the polling detect the cancelled status
       } else {
         alert('Failed to stop test run: ' + (data.error || 'Unknown error'));
         setIsStopping(false);
+        setHasStopped(false); // Show button again on error
       }
     } catch (error) {
       console.error('Error stopping test:', error);
       alert('Failed to stop test run. Please try again.');
       setIsStopping(false);
+      setHasStopped(false); // Show button again on error
     }
   };
 

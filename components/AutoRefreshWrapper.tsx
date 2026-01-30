@@ -31,16 +31,17 @@ export default function AutoRefreshWrapper({
         const response = await fetch(`/api/test-run-status/${runId}`);
         const data = await response.json();
 
-        // If status changed to completed, failed, or cancelled, refresh the page
+        // If status changed to completed, failed, or cancelled, refresh the page immediately
         if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
           setIsPolling(false);
-          router.refresh();
           clearInterval(pollInterval);
+          // Use router.refresh() to re-fetch server components
+          router.refresh();
         }
       } catch (error) {
         console.error('Error polling test status:', error);
       }
-    }, 3000); // Poll every 3 seconds
+    }, 1000); // Poll every 1 second for faster updates
 
     return () => clearInterval(pollInterval);
   }, [runId, initialStatus, router]);

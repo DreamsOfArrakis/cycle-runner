@@ -1,8 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import TestRunRow from "@/components/TestRunRow";
-import { formatDistanceToNow } from "date-fns";
-import { cookies } from "next/headers";
 
 export default async function TestRunsPage() {
   const supabase = await createClient();
@@ -11,83 +9,36 @@ export default async function TestRunsPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Check if user is admin (cyclerunner@example.com)
+  // Check if user is admin (cyclerunner@example.com) - admins see all test runs
   const isAdmin = user?.email === "cyclerunner@example.com";
 
-  // Get selected company from cookie (set by dropdown in layout)
-  const cookieStore = await cookies();
-  const selectedCompanyRaw = cookieStore.get("selectedCompany")?.value;
-  // Decode the cookie value (it's URL-encoded when set)
-  const selectedCompany = selectedCompanyRaw ? decodeURIComponent(selectedCompanyRaw) : null;
-
-  let testRuns: any[] = [];
-  let error: any = null;
-
-  // If company is selected in dropdown, filter by users with that company (for all users, including admin)
-  if (selectedCompany) {
-    // Use admin client to bypass RLS and get all users for the company
-    const supabaseAdmin = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    // Get all user IDs for the selected company (bypasses RLS)
-    const { data: companyProfiles } = await supabaseAdmin
-      .from("profiles")
-      .select("id")
-      .eq("company_name", selectedCompany);
-
-    if (companyProfiles && companyProfiles.length > 0) {
-      const userIds = companyProfiles.map((p) => p.id);
-      // Use admin client to bypass RLS when querying test_runs (admin needs to see all runs for selected company)
-      const result = await supabaseAdmin
-        .from("test_runs")
-        .select(`
-          *,
-          test_suites(name)
-        `)
-        .in("user_id", userIds)
-        .order("created_at", { ascending: false })
-        .limit(50);
-      testRuns = result.data || [];
-      error = result.error;
-    } else {
-      // No users with this company, return empty array
-      testRuns = [];
-    }
-  } else {
-    // No company selected in dropdown
-    if (isAdmin) {
-      // Admin users see all test runs when no company is selected
-      const supabaseAdmin = createAdminClient(
+  // Use admin client if admin, otherwise use regular client
+  const client = isAdmin
+    ? createAdminClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_ROLE_KEY!
-      );
-      const result = await supabaseAdmin
-        .from("test_runs")
-        .select(`
-          *,
-          test_suites(name)
-        `)
-        .order("created_at", { ascending: false })
-        .limit(50);
-      testRuns = result.data || [];
-      error = result.error;
-    } else {
-      // Non-admin users see only their own test runs
-      const result = await supabase
-        .from("test_runs")
-        .select(`
-          *,
-          test_suites(name)
-        `)
-        .eq("user_id", user?.id)
-        .order("created_at", { ascending: false })
-        .limit(50);
-      testRuns = result.data || [];
-      error = result.error;
-    }
+      )
+    : supabase;
+
+  // Get all test runs - no user_id filter for admin, filter by user_id for regular users
+  let query = client
+    .from("test_runs")
+    .select(`
+      *,
+      test_suites(name)
+    `);
+  
+  // Only filter by user_id if not admin
+  if (!isAdmin) {
+    query = query.eq("user_id", user?.id);
   }
+  
+  const result = await query
+    .order("created_at", { ascending: false })
+    .limit(50);
+  
+  const testRuns = result.data || [];
+  const error = result.error;
 
   return (
     <div className="space-y-6">

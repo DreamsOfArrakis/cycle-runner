@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     // Use suite's user_id (owner) when admin triggers, otherwise use current user's id
     const runUserId = isAdmin ? suite.user_id : user.id;
     
-    // Use admin client for insert if admin is triggering for another company's suite
+    // Use admin client for insert if admin is triggering tests
     const clientForInsert = isAdmin ? createAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -185,7 +185,7 @@ async function triggerFlyioRunner(runId: string, suite: any, selectedTests?: { t
     
     // Run in background with output visible
     // Use detached: true so it runs independently
-    // We'll kill it by PID directly since detached processes are harder to kill by process group
+    // On Unix, detached processes automatically get their own process group
     const child = spawn("node", args, {
       detached: true,
       stdio: "inherit", // Show output in terminal for debugging

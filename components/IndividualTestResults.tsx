@@ -46,15 +46,35 @@ export default function IndividualTestResults({ runId, runStatus }: IndividualTe
     }
   };
 
+  const [currentStatus, setCurrentStatus] = useState(runStatus);
+
   useEffect(() => {
     fetchTests();
 
-    // Poll for updates if test run is still running
-    if (runStatus === 'running' || runStatus === 'pending') {
-      const interval = setInterval(fetchTests, 2000); // Poll every 2 seconds
-      return () => clearInterval(interval);
+    // Poll for status updates if test run is still running
+    const pollStatus = async () => {
+      try {
+        const response = await fetch(`/api/test-run-status/${runId}`);
+        const data = await response.json();
+        if (data.status) {
+          setCurrentStatus(data.status);
+        }
+      } catch (error) {
+        console.error('Error polling status:', error);
+      }
+    };
+
+    // Poll status every 1 second if still running
+    if (currentStatus === 'running' || currentStatus === 'pending') {
+      const statusInterval = setInterval(pollStatus, 1000);
+      const testsInterval = setInterval(fetchTests, 2000); // Poll test results every 2 seconds
+      
+      return () => {
+        clearInterval(statusInterval);
+        clearInterval(testsInterval);
+      };
     }
-  }, [runId, runStatus]);
+  }, [runId, currentStatus]);
 
   const toggleVideo = (testId: string) => {
     const newExpanded = new Set(expandedVideos);

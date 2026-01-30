@@ -1,9 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
 import TestSuiteCard from "@/components/TestSuiteCard";
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { cookies } from "next/headers";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -15,68 +13,30 @@ export default async function DashboardPage() {
   // Check if user is admin (cyclerunner@example.com)
   const isAdmin = user?.email === "cyclerunner@example.com";
 
-  // Get selected company from cookie (set by dropdown in layout)
-  const cookieStore = await cookies();
-  const selectedCompanyRaw = cookieStore.get("selectedCompany")?.value;
-  // Decode the cookie value (it's URL-encoded when set)
-  const selectedCompany = selectedCompanyRaw ? decodeURIComponent(selectedCompanyRaw) : null;
-
   let testSuites: any[] = [];
   let error: any = null;
 
-  // If company is selected in dropdown, filter by users with that company (for all users, including admin)
-  if (selectedCompany) {
-    // Use admin client to bypass RLS and get all users for the company
+  // Admin users see all test suites, regular users see only their own
+  if (isAdmin) {
+    const { createClient: createAdminClient } = await import("@supabase/supabase-js");
     const supabaseAdmin = createAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
-
-    // Get all user IDs for the selected company (bypasses RLS)
-    const { data: companyProfiles } = await supabaseAdmin
-      .from("profiles")
-      .select("id")
-      .eq("company_name", selectedCompany);
-
-    if (companyProfiles && companyProfiles.length > 0) {
-      const userIds = companyProfiles.map((p) => p.id);
-      
-      // Use admin client to bypass RLS when querying test_suites (admin needs to see all suites for selected company)
-      const result = await supabaseAdmin
-        .from("test_suites")
-        .select("*")
-        .in("user_id", userIds)
-        .order("created_at", { ascending: false });
-      testSuites = result.data || [];
-      error = result.error;
-    } else {
-      // No users with this company, return empty array
-      testSuites = [];
-    }
+    const result = await supabaseAdmin
+      .from("test_suites")
+      .select("*")
+      .order("created_at", { ascending: false });
+    testSuites = result.data || [];
+    error = result.error;
   } else {
-    // No company selected in dropdown
-    if (isAdmin) {
-      // Admin users see all test suites when no company is selected
-      const supabaseAdmin = createAdminClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-      );
-      const result = await supabaseAdmin
-        .from("test_suites")
-        .select("*")
-        .order("created_at", { ascending: false });
-      testSuites = result.data || [];
-      error = result.error;
-    } else {
-      // Non-admin users see only their own test suites
-      const result = await supabase
-        .from("test_suites")
-        .select("*")
-        .eq("user_id", user?.id)
-        .order("created_at", { ascending: false });
-      testSuites = result.data || [];
-      error = result.error;
-    }
+    const result = await supabase
+      .from("test_suites")
+      .select("*")
+      .eq("user_id", user?.id)
+      .order("created_at", { ascending: false });
+    testSuites = result.data || [];
+    error = result.error;
   }
 
   return (

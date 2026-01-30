@@ -25,58 +25,26 @@ export default function TestSelector({ suiteId, onRunTests, isRunning }: TestSel
   const [loading, setLoading] = useState(true);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [selectedTests, setSelectedTests] = useState<Set<string>>(new Set());
-  const [selectedCompany, setSelectedCompany] = useState<string>("");
-
-  useEffect(() => {
-    // Get initial company from localStorage
-    const company = localStorage.getItem("selectedCompany") || "";
-    setSelectedCompany(company);
-    
-    // Listen for storage changes (when dropdown changes company)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "selectedCompany") {
-        setSelectedCompany(e.newValue || "");
-      }
-    };
-    
-    // Listen for custom event (triggered by company dropdown)
-    const handleCompanyChange = () => {
-      const company = localStorage.getItem("selectedCompany") || "";
-      setSelectedCompany(company);
-    };
-    
-    window.addEventListener("storage", handleStorageChange);
-    window.addEventListener("companyChanged", handleCompanyChange);
-    
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      window.removeEventListener("companyChanged", handleCompanyChange);
-    };
-  }, []);
 
   useEffect(() => {
     fetchTests();
-  }, [selectedCompany]); // Re-fetch when company changes
+  }, [suiteId]); // Re-fetch when suiteId changes
 
   const fetchTests = async () => {
     setLoading(true);
     try {
-      // Get selected company from localStorage (set by dropdown)
-      const company = selectedCompany || localStorage.getItem("selectedCompany") || "";
-      // Use suiteId if available (more direct than company lookup)
+      // Use suiteId to fetch tests
       const url = suiteId
         ? `/api/available-tests?suiteId=${encodeURIComponent(suiteId)}`
-        : company 
-          ? `/api/available-tests?company=${encodeURIComponent(company)}`
-          : '/api/available-tests';
+        : '/api/available-tests';
       
       const response = await fetch(url);
       const data = await response.json();
       
       if (data.success) {
         setCategories(data.categories);
-        // Expand all categories by default
-        setExpandedCategories(new Set(data.categories.map((c: Category) => c.name)));
+        // Start with all categories collapsed - user can expand them if they want to select tests
+        setExpandedCategories(new Set());
         // Start with all tests unchecked - user can select what they want
         setSelectedTests(new Set());
       } else if (data.error) {

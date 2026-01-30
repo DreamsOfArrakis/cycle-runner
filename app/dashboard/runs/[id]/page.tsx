@@ -2,12 +2,13 @@ import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { CheckCircle, XCircle, Clock, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import IndividualTestResults from "@/components/IndividualTestResults";
 import AutoRefreshWrapper from "@/components/AutoRefreshWrapper";
 import StopTestButton from "@/components/StopTestButton";
+import StatusDisplay from "@/components/StatusDisplay";
 
 export default async function TestRunDetailPage({
   params,
@@ -59,18 +60,6 @@ export default async function TestRunDetailPage({
     notFound();
   }
 
-  const getStatusIcon = () => {
-    switch (run.status) {
-      case "completed":
-        return <CheckCircle className="w-8 h-8 text-green-600" />;
-      case "failed":
-        return <XCircle className="w-8 h-8 text-red-600" />;
-      case "running":
-        return <Clock className="w-8 h-8 text-blue-600 animate-spin" />;
-      default:
-        return <Clock className="w-8 h-8 text-gray-400" />;
-    }
-  };
 
   const formatDuration = (ms: number | null) => {
     if (!ms) return "N/A";
@@ -96,7 +85,7 @@ export default async function TestRunDetailPage({
         </Link>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            {getStatusIcon()}
+            <StatusDisplay runId={params.id} initialStatus={run.status} showIcon={true} showText={false} />
                   <div>
                     <h1 className="text-3xl font-bold" style={{ color: '#0e545e' }}>
                       {run.test_suites?.name || "Test Run"}
@@ -115,7 +104,7 @@ export default async function TestRunDetailPage({
       <div className="grid md:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow-sm p-6">
           <div className="text-sm text-gray-600 mb-1">Status</div>
-          <div className="text-2xl font-bold capitalize">{run.status}</div>
+          <StatusDisplay runId={params.id} initialStatus={run.status} />
         </div>
         <div className="bg-white rounded-lg shadow-sm p-6">
           <div className="text-sm text-gray-600 mb-1">Duration</div>

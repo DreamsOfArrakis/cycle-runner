@@ -13,7 +13,6 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    // Get the authenticated user's company name
     const supabase = await createClient();
     const {
       data: { user },
@@ -28,83 +27,93 @@ export async function GET(request: NextRequest) {
 
     // Check if user is admin (cyclerunner@example.com) - admins see all tests
     const isAdmin = user.email === "cyclerunner@example.com";
-
-    // Get company name or suiteId from query parameters
-    const { searchParams } = new URL(request.url);
-    const selectedCompany = searchParams.get("company");
-    const suiteId = searchParams.get("suiteId");
     
-    // Admin users can see all tests regardless of company
-    // For regular users, show tests when any company is selected in the dropdown
-    // If no company is selected, check user's profile and only show if it includes "ecommerce"
-    if (!isAdmin && !selectedCompany) {
-      // Fallback to user's profile company name
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("company_name")
-        .eq("id", user.id)
-        .single();
-      const companyName = profile?.company_name?.toLowerCase().trim() || "";
-      const normalizedCompanyName = companyName.replace(/[-_\s]/g, "");
-
-      // Only show tests for companies with "ecommerce" if no company is selected
-      if (!companyName || !normalizedCompanyName.includes("ecommerce")) {
-        return NextResponse.json({
-          success: true,
-          categories: [],
-        });
-      }
-    }
-
-    // If a company is selected in dropdown (or admin user), show all tests
+    // Get suiteId from query parameters
+    const { searchParams } = new URL(request.url);
+    const suiteId = searchParams.get("suiteId");
 
     // Check if suite has a github_repo configured
     let githubRepo: string | null = null;
     let testSourcePath: string | null = null;
 
-    const supabaseAdmin = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    // Map suite name to folder name for filtering (used for both GitHub and local tests)
+    const suiteNameToFolder: Record<string, string> = {
+      "The Furniture Store": "furniture-store",
+      "Furniture Store": "furniture-store",
+      "E-commerce Demo Tests": "ecommerce-store",
+      "Ecommerce Demo Tests": "ecommerce-store",
+      "E-commerce": "ecommerce-store",
+      "Ecommerce": "ecommerce-store",
+    };
+    
+    // Helper function to determine folder filter from suite name
+    const getFolderFilter = (name: string | null): string | null => {
+      if (!name) return null;
+      
+      // Try exact match first
+      let folderFilter = suiteNameToFolder[name];
+      
+      // If no exact match, try case-insensitive partial match
+      if (!folderFilter) {
+        const lowerSuiteName = name.toLowerCase();
+        for (const [key, folder] of Object.entries(suiteNameToFolder)) {
+          if (lowerSuiteName.includes(key.toLowerCase())) {
+            folderFilter = folder;
+            break;
+          }
+        }
+      }
+      
+      return folderFilter || null;
+    };
 
-    // If suiteId is provided, get github_repo directly from that suite
+    // If suiteId is provided, get github_repo and name directly from that suite
+    let suiteName: string | null = null;
     if (suiteId) {
-      const { data: suite } = await supabaseAdmin
+      // Use admin client if admin, otherwise use regular client with user_id filter
+      const clientForQuery = isAdmin 
+        ? createAdminClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+          )
+        : supabase;
+      
+      let query = clientForQuery
+        .from("test_suites")
+        .select("github_repo, name")
+        .eq("id", suiteId);
+      
+      // Only filter by user_id if not admin
+      if (!isAdmin) {
+        query = query.eq("user_id", user.id);
+      }
+      
+      const { data: suite } = await query.single();
+      
+      if (suite) {
+        if (suite.github_repo) {
+          githubRepo = suite.github_repo;
+        }
+        suiteName = suite.name;
+        console.log(`[available-tests] Suite "${suiteName}" - GitHub repo: ${githubRepo || 'none'}, folder filter: ${getFolderFilter(suiteName) || 'none'}`);
+      }
+    } else {
+      // Fallback: Find user's active suite with github_repo
+      const { data: suites } = await supabase
         .from("test_suites")
         .select("github_repo")
-        .eq("id", suiteId)
-        .single();
-      
-      if (suite && suite.github_repo) {
-        githubRepo = suite.github_repo;
-      }
-    } else if (selectedCompany) {
-      // Fallback: Find suites for this company
-      // Get user IDs for this company
-      const { data: companyProfiles } = await supabaseAdmin
-        .from("profiles")
-        .select("id")
-        .eq("company_name", selectedCompany);
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+        .not("github_repo", "is", null)
+        .limit(1);
 
-      if (companyProfiles && companyProfiles.length > 0) {
-        const userIds = companyProfiles.map((p) => p.id);
-        
-        // Find active suite with github_repo for this company
-        const { data: suites } = await supabaseAdmin
-          .from("test_suites")
-          .select("github_repo")
-          .in("user_id", userIds)
-          .eq("is_active", true)
-          .not("github_repo", "is", null)
-          .limit(1);
-
-        if (suites && suites.length > 0 && suites[0].github_repo) {
-          githubRepo = suites[0].github_repo;
-        }
+      if (suites && suites.length > 0 && suites[0].github_repo) {
+        githubRepo = suites[0].github_repo;
       }
     }
 
     // If github_repo is configured, ONLY use that repo (don't fall back to local)
+    // Don't apply folder filtering for GitHub repos - show all tests from the repo
     if (githubRepo) {
       try {
         console.log(`[available-tests] Cloning repository: ${githubRepo}`);
@@ -114,7 +123,7 @@ export async function GET(request: NextRequest) {
         testSourcePath = await findTestDirectory(clonedRepoPath);
         console.log(`[available-tests] Test directory: ${testSourcePath}`);
         
-        // Update discover-tests.js to accept external path
+        // Discover all tests from the external repository (no folder filtering)
         const runnerPath = path.join(process.cwd(), "playwright-runner");
         const command = `node discover-tests.js --external "${testSourcePath}"`;
         console.log(`[available-tests] Running: ${command}`);
@@ -186,7 +195,7 @@ export async function GET(request: NextRequest) {
           });
         }
 
-        // Group tests by category
+        // Group tests by category (no folder filtering for GitHub repos - show all tests)
         const categories = tests.reduce((acc: any, test: any) => {
           const fileName = test.testFile.split('/').pop() || test.testFile;
           const category = fileName.replace(".spec.js", "");
@@ -224,33 +233,16 @@ export async function GET(request: NextRequest) {
     }
 
     // Only use local tests if NO github_repo is configured
-    // Map company name to folder name for local tests
-    let companyFolder = null;
-    if (selectedCompany) {
-      const normalized = selectedCompany
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-');
-      
-      // Only show local tests for ecommerce-store (which doesn't have github_repo)
-      if (normalized.includes('ecommerce') || normalized.includes('e-commerce')) {
-        companyFolder = 'ecommerce-store';
-      } else {
-        // For other companies without github_repo, return empty
-        return NextResponse.json({
-          success: true,
-          categories: [],
-        });
-      }
-    }
-
-    // Run the test discovery script with optional company folder filter
+    // Use the same folder filter logic (already defined above)
+    const localFolderFilter = getFolderFilter(suiteName);
+    
+    // Run the test discovery script with optional folder filter
     const runnerPath = path.join(process.cwd(), "playwright-runner");
-    const command = companyFolder 
-      ? `node discover-tests.js ${companyFolder}`
+    const command = localFolderFilter 
+      ? `node discover-tests.js ${localFolderFilter}`
       : "node discover-tests.js";
+    
+    console.log(`[available-tests] Discovering tests with folder filter: ${localFolderFilter || 'none'}`);
     const { stdout } = await execAsync(command, {
       cwd: runnerPath,
     });
@@ -274,10 +266,20 @@ export async function GET(request: NextRequest) {
         categories: [],
       });
     }
-
+    
+    // Additional filtering: if localFolderFilter is set, ensure tests are from that folder
+    let filteredTests = tests;
+    if (localFolderFilter) {
+      filteredTests = tests.filter((test: any) => {
+        // testFile should be like "furniture-store/homepage.spec.js" or "ecommerce-store/authentication.spec.js"
+        return test.testFile.startsWith(`${localFolderFilter}/`);
+      });
+      console.log(`[available-tests] Filtered ${tests.length} tests to ${filteredTests.length} tests in folder: ${localFolderFilter}`);
+    }
+    
     // Group tests by category (file)
     // testFile now includes folder path (e.g., "ecommerce-store/authentication.spec.js")
-    const categories = tests.reduce((acc: any, test: any) => {
+    const categories = filteredTests.reduce((acc: any, test: any) => {
       // Extract just the filename without folder path for category name
       const fileName = test.testFile.split('/').pop() || test.testFile;
       const category = fileName.replace(".spec.js", "");

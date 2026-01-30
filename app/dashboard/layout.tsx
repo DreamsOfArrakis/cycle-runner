@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
-import { LogOut, Home, Play, ChevronDown } from "lucide-react";
+import { LogOut, Home, Play } from "lucide-react";
 import LogoutButton from "@/components/LogoutButton";
 import Footer from "@/components/Footer";
 
@@ -16,9 +16,6 @@ export default function DashboardLayout({
   const router = useRouter();
   const supabase = createClient();
   const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
-  const [companies, setCompanies] = useState<string[]>([]);
-  const [selectedCompany, setSelectedCompany] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -29,73 +26,12 @@ export default function DashboardLayout({
         router.push("/login");
       } else {
         setUser(user);
-        
-        // Fetch profile to get company name
-        const { data: profileData, error: profileError } = await supabase
-          .from("profiles")
-          .select("company_name")
-          .eq("id", user.id)
-          .single();
-        
-        if (profileError) {
-          console.error("Error fetching profile:", profileError);
-        }
-        
-        if (profileData) {
-          setProfile(profileData);
-        }
-
-        // Fetch all unique company names from API (bypasses RLS)
-        try {
-          const companiesResponse = await fetch('/api/companies');
-          const companiesData = await companiesResponse.json();
-          
-          if (companiesData.success && companiesData.companies) {
-            const fetchedCompanies = companiesData.companies;
-            setCompanies(fetchedCompanies);
-
-            // Set selected company from localStorage or default to user's company
-            const storedCompany = localStorage.getItem("selectedCompany");
-            let companyToSet = "";
-            
-            if (storedCompany && fetchedCompanies.includes(storedCompany)) {
-              companyToSet = storedCompany;
-            } else if (profileData?.company_name) {
-              companyToSet = profileData.company_name;
-            } else if (fetchedCompanies.length > 0) {
-              companyToSet = fetchedCompanies[0];
-            }
-            
-            if (companyToSet) {
-              setSelectedCompany(companyToSet);
-              localStorage.setItem("selectedCompany", companyToSet);
-              // Set cookie for server components to read
-              document.cookie = `selectedCompany=${encodeURIComponent(companyToSet)}; path=/; max-age=31536000; SameSite=Lax`;
-            }
-          }
-        } catch (error) {
-          console.error("Error fetching companies:", error);
-        }
       }
       setLoading(false);
     };
 
     checkUser();
   }, [router, supabase]);
-
-  const handleCompanyChange = async (companyName: string) => {
-    setSelectedCompany(companyName);
-    localStorage.setItem("selectedCompany", companyName);
-    
-    // Set cookie for server components to read
-    document.cookie = `selectedCompany=${encodeURIComponent(companyName)}; path=/; max-age=31536000; SameSite=Lax`;
-    
-    // Dispatch custom event for TestSelector to listen to
-    window.dispatchEvent(new CustomEvent("companyChanged"));
-    
-    // Refresh the page to apply the new company context
-    router.refresh();
-  };
 
   if (loading) {
     return (
@@ -145,34 +81,6 @@ export default function DashboardLayout({
                         CYCLE-RUNNER
                       </span>
                     </Link>
-
-                    <div className="relative">
-                      <select
-                        value={selectedCompany || ""}
-                        onChange={(e) => handleCompanyChange(e.target.value)}
-                        className="appearance-none bg-transparent border border-white/30 rounded-md px-4 py-2 pr-8 text-white font-medium cursor-pointer hover:border-white/50 transition focus:outline-none focus:ring-2 focus:ring-white/30"
-                        style={{ color: 'white' }}
-                      >
-                        {loading ? (
-                          <option value="">Loading...</option>
-                        ) : companies.length > 0 ? (
-                          companies.map((company) => (
-                            <option 
-                              key={company} 
-                              value={company}
-                              style={{ color: '#0e545e', backgroundColor: 'white' }}
-                            >
-                              {company}
-                            </option>
-                          ))
-                        ) : (
-                          <option value="" style={{ color: '#0e545e', backgroundColor: 'white' }}>
-                            Your Company
-                          </option>
-                        )}
-                      </select>
-                      <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white pointer-events-none" />
-                    </div>
                   </div>
                 </div>
 

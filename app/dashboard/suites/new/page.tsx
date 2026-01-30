@@ -29,10 +29,7 @@ export default function NewTestSuitePage() {
         throw new Error("Not authenticated");
       }
 
-      // Get selected company from localStorage (set by dropdown)
-      const selectedCompany = localStorage.getItem("selectedCompany");
-      
-      // Use API route to create test suite (handles RLS for admin users)
+      // Use API route to create test suite
       const createResponse = await fetch("/api/suites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -40,7 +37,6 @@ export default function NewTestSuitePage() {
           name,
           description: description || null,
           github_repo: githubRepo || null,
-          company: selectedCompany || null,
         }),
       });
 
